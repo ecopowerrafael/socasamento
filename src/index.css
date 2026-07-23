@@ -1,0 +1,39 @@
+@import "tailwindcss";
+
+@theme {
+  --color-rosa: #C88E9B;
+  --color-marrom: #5A4035;
+  --color-champanhe: #F6EEE8;
+  --color-dourado: #C7A86A;
+  --font-serif: 'Cormorant Garamond', 'Playfair Display', Georgia, serif;
+  --font-sans: 'Montserrat', 'Plus Jakarta Sans', system-ui, sans-serif;
+}
+
+@layer base {
+  body {
+    font-family: 'Montserrat', system-ui, sans-serif;
+    background-color: #F6EEE8;
+    color: #5A4035;
+  }
+  
+  h1, h2, h3, .font-serif {
+    font-family: 'Cormorant Garamond', 'Playfair Display', Georgia, serif;
+  }
+}
+
+/* Custom scrollbar for gallery and feed */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: #F6EEE8;
+}
+::-webkit-scrollbar-thumb {
+  background: #C88E9B;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #C7A86A;
+}
+

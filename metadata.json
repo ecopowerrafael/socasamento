@@ -1,0 +1,6 @@
+{
+  "name": "Só Fotógrafos de Casamento",
+  "description": "O maior portal nacional de fotógrafos de casamento do Brasil. Busca por cidade, estilo, orçamento, comparador e orçamentos online.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
