@@ -1,15 +1,17 @@
 import React, { useState, useEffect } from 'react';
-import { UserCheck, MessageSquare, Eye, Phone, DollarSign, ShieldCheck, Check, Sparkles, Filter, Edit3, Image as ImageIcon, Plus, Trash2, ArrowLeft, ArrowRight, Star, Upload, MoveLeft, MoveRight } from 'lucide-react';
+import { UserCheck, MessageSquare, Eye, Phone, DollarSign, ShieldCheck, Check, Sparkles, Filter, Edit3, Image as ImageIcon, Plus, Trash2, ArrowLeft, ArrowRight, Star, Upload, MoveLeft, MoveRight, LogOut } from 'lucide-react';
 import { Photographer, PhotoItem } from '../types';
 
 interface PhotographerPanelProps {
   photographer: Photographer;
   onUpdatePhotographer: (p: Photographer) => void;
+  onLogout?: () => void;
 }
 
 export const PhotographerPanel: React.FC<PhotographerPanelProps> = ({
   photographer,
   onUpdatePhotographer,
+  onLogout,
 }) => {
   const [activeTab, setActiveTab] = useState<'leads' | 'edit-profile' | 'stats'>('leads');
   const [leadsList, setLeadsList] = useState<any[]>([]);
@@ -143,6 +145,20 @@ export const PhotographerPanel: React.FC<PhotographerPanelProps> = ({
           >
             Editar Perfil
           </button>
+
+          {onLogout && (
+            <>
+              <div className="h-6 w-px bg-white/20 my-auto" />
+              <button
+                onClick={onLogout}
+                className="px-3.5 py-2 rounded-xl font-bold bg-red-500/20 text-red-200 hover:bg-red-500/40 hover:text-white transition-all flex items-center gap-1.5"
+                title="Sair do Painel do Fotógrafo"
+              >
+                <LogOut className="w-3.5 h-3.5" />
+                <span>Sair</span>
+              </button>
+            </>
+          )}
         </div>
       </div>
 

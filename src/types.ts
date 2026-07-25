@@ -1,3 +1,18 @@
+export type UserRole = 'super_admin' | 'admin' | 'photographer' | 'client';
+
+export interface UserSession {
+  id: string;
+  name: string;
+  email: string;
+  role: UserRole;
+  photographerId?: string;
+  studioName?: string;
+  city?: string;
+  state?: string;
+  phone?: string;
+  lastLoginAt?: string;
+}
+
 export type StyleType = 
   | 'Documental' 
   | 'Fine Art' 
@@ -140,6 +155,76 @@ export interface BlogArticle {
   seoKeywords: string[];
 }
 
+export interface CategoryItem {
+  id: number;
+  parentId?: number | null;
+  name: string;
+  slug: string;
+  shortDescription?: string | null;
+  description?: string | null;
+  icon?: string | null;
+  image?: string | null;
+  iconColor?: string | null;
+  seoTitle?: string | null;
+  seoDescription?: string | null;
+  focusKeyword?: string | null;
+  showOnHome: boolean;
+  showOnSearch: boolean;
+  sortOrder: number;
+  status: 'active' | 'inactive';
+  photographersCount?: number;
+  createdAt?: string;
+  updatedAt?: string;
+  deletedAt?: string | null;
+}
+
+export interface StateItem {
+  id: number;
+  name: string;
+  uf: string;
+  slug: string;
+  ibgeCode?: string | null;
+  region?: 'Norte' | 'Nordeste' | 'Centro-Oeste' | 'Sudeste' | 'Sul' | string;
+  image?: string | null;
+  introductoryText?: string | null;
+  seoTitle?: string | null;
+  seoDescription?: string | null;
+  showInNavigation: boolean;
+  sortOrder: number;
+  status: 'active' | 'inactive';
+  citiesCount?: number;
+  photographersCount?: number;
+  createdAt?: string;
+  updatedAt?: string;
+  deletedAt?: string | null;
+}
+
+export interface CityItem {
+  id: number;
+  stateId?: number | null;
+  stateUf: string;
+  stateName?: string;
+  name: string;
+  slug: string;
+  ibgeCode?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  image?: string | null;
+  introductoryText?: string | null;
+  heroText?: string | null;
+  seoTitle?: string | null;
+  seoDescription?: string | null;
+  focusKeyword?: string | null;
+  showInNavigation: boolean;
+  featured: boolean;
+  sortOrder: number;
+  status: 'active' | 'inactive';
+  photographersCount?: number;
+  createdAt?: string;
+  updatedAt?: string;
+  deletedAt?: string | null;
+}
+
 export interface StateData {
   uf: string;
   name: string;
@@ -208,4 +293,87 @@ export interface BudgetCalculatorInput {
   wantsAlbum: boolean;
   wantsPreWedding: boolean;
   stylePreference: StyleType;
+}
+
+export interface BrideGuest {
+  id: string;
+  name: string;
+  phone: string;
+  family: string;
+  status: 'confirmado' | 'pendente' | 'recusado';
+  companionCount: number;
+  tableNumber: string;
+}
+
+export interface BrideGift {
+  id: string;
+  title: string;
+  value: number;
+  purchased: boolean;
+  givenBy?: string;
+  category?: string;
+  imageUrl?: string;
+}
+
+export interface BrideExpense {
+  id: string;
+  category: string;
+  supplier: string;
+  amount: number;
+  paidAmount: number;
+  dueDate: string;
+}
+
+export interface BrideCalendarEvent {
+  id: string;
+  title: string;
+  type: 'Degustação' | 'Prova do vestido' | 'Reunião com fotógrafo' | 'Chá de panela' | 'Casamento civil' | 'Outros';
+  date: string;
+  time: string;
+  location?: string;
+  notify: boolean;
+  notes?: string;
+}
+
+export interface BrideInspiration {
+  id: string;
+  title: string;
+  category: 'decoração' | 'vestido' | 'fotografia' | 'maquiagem' | 'bolo';
+  imageUrl: string;
+  likesCount: number;
+  favorited?: boolean;
+}
+
+export interface BridePhotoLocation {
+  id: string;
+  name: string;
+  category: 'Lago' | 'Fazenda' | 'Cachoeira' | 'Centro histórico' | 'Praia' | 'Campo';
+  city: string;
+  state: string;
+  coverImage: string;
+  idealTime: string;
+  needAuthorization: boolean;
+  feeInfo?: string;
+  description: string;
+  address?: string;
+}
+
+export interface BrideWeddingSite {
+  coupleNames: string;
+  weddingDate: string;
+  story: string;
+  venueName: string;
+  venueAddress: string;
+  mapUrl?: string;
+  coverPhoto: string;
+  galleryPhotos: string[];
+}
+
+export interface BrideGamificationBadge {
+  id: string;
+  title: string;
+  icon: string;
+  unlocked: boolean;
+  description: string;
+  progressPercent?: number;
 }

@@ -21,7 +21,7 @@ export const Footer: React.FC<FooterProps> = ({ setCurrentView, onSelectCity }) 
             >
               <img 
                 src="https://loteria.rafaelaugusto.shop/wp-content/uploads/2026/07/ChatGPT-Image-23-de-jul.-de-2026-13_34_25.png" 
-                alt="Só Fotógrafos" 
+                alt="Guia Fotógrafo Casamento" 
                 referrerPolicy="no-referrer"
                 className="h-10 w-auto object-contain"
               />
@@ -72,25 +72,34 @@ export const Footer: React.FC<FooterProps> = ({ setCurrentView, onSelectCity }) 
           {/* Security & Support */}
           <div className="space-y-3">
             <h4 className="text-sm font-serif font-bold text-[#C7A86A] uppercase tracking-wider">
-              Área do Profissional
+              Área Profissional & Gestão
             </h4>
             <p className="text-xs text-[#F6EEE8]/80">
-              Fotógrafo, acesse seu painel para responder aos orçamentos recebidos e gerenciar seu perfil.
+              Acesso exclusivo para estúdios parceiros e gestão do portal.
             </p>
 
-            <button
-              onClick={() => setCurrentView('photographer-panel')}
-              className="w-full py-2.5 bg-[#C88E9B] hover:bg-[#b07885] text-white font-bold text-xs rounded-xl shadow-sm transition-colors"
-            >
-              Acessar Painel do Fotógrafo
-            </button>
+            <div className="space-y-2 pt-1">
+              <button
+                onClick={() => setCurrentView('photographer-panel')}
+                className="w-full py-2.5 bg-[#C88E9B] hover:bg-[#b07885] text-white font-bold text-xs rounded-xl shadow-sm transition-colors text-center block"
+              >
+                Painel Pro do Fotógrafo
+              </button>
+
+              <button
+                onClick={() => setCurrentView('admin-panel')}
+                className="w-full py-2 bg-white/10 hover:bg-white/20 text-[#C7A86A] border border-[#C7A86A]/40 font-semibold text-xs rounded-xl transition-colors text-center block"
+              >
+                Painel Administrativo (Admin)
+              </button>
+            </div>
           </div>
 
         </div>
 
         {/* Bottom copyright */}
         <div className="pt-8 border-t border-white/10 flex flex-col sm:flex-row items-center justify-between text-xs text-[#F6EEE8]/60 gap-4">
-          <p>© 2026 Só Fotógrafos de Casamento. Todos os direitos reservados.</p>
+          <p>© 2026 Guia Fotógrafo Casamento. Todos os direitos reservados.</p>
           <div className="flex items-center gap-4">
             <span className="hover:underline cursor-pointer">Termos de Uso</span>
             <span>•</span>

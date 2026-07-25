@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Header } from './components/Header';
 import { HeroSearch } from './components/HeroSearch';
 import { PhotographerCard } from './components/PhotographerCard';
@@ -14,31 +14,208 @@ import { PhotographerPanel } from './components/PhotographerPanel';
 import { AdminDashboard } from './components/AdminDashboard';
 import { BrazilMapStateBrowser } from './components/BrazilMapStateBrowser';
 import { MultiQuoteModal } from './components/MultiQuoteModal';
+import { AuthView } from './components/AuthView';
+import { AccessDeniedView } from './components/AccessDeniedView';
 import { Footer } from './components/Footer';
 
-import { MOCK_PHOTOGRAPHERS, RECENT_WEDDINGS, CITY_SEO_PAGES } from './data/mockData';
-import { Photographer, CategoryType, PricingPackage } from './types';
-import { Star, ShieldCheck, Camera, Sparkles, Heart, Quote } from 'lucide-react';
+import { CITY_SEO_PAGES } from './data/mockData';
+import { Photographer, CategoryType, PricingPackage, UserSession } from './types';
+import { Sparkles, Quote, RefreshCw } from 'lucide-react';
 
 export default function App() {
+  // Helper to parse route from location
+  const getRouteFromUrl = () => {
+    const path = window.location.pathname.toLowerCase().replace(/\/$/, '');
+    const hash = window.location.hash.toLowerCase().replace('#', '');
+    const searchParams = new URLSearchParams(window.location.search);
+    const viewParam = searchParams.get('view');
+
+    if (viewParam) {
+      if (viewParam === 'admin' || viewParam === 'admin-panel') return { view: 'admin-panel' };
+      if (viewParam === 'painel' || viewParam === 'pro' || viewParam === 'photographer-panel') return { view: 'photographer-panel' };
+      if (viewParam === 'login') return { view: 'login' };
+      if (viewParam === 'register') return { view: 'cadastrar-estudio' };
+      if (viewParam === 'blog') return { view: 'blog' };
+      if (viewParam === 'plans' || viewParam === 'planos' || viewParam === 'anunciar') return { view: 'plans' };
+    }
+
+    if (path === '/login' || hash === 'login') return { view: 'login' };
+    if (path === '/cadastrar-estudio' || hash === 'register') return { view: 'cadastrar-estudio' };
+    if (path === '/esqueci-minha-senha' || hash === 'forgot') return { view: 'esqueci-minha-senha' };
+    if (path === '/redefinir-senha' || hash === 'reset') return { view: 'redefinir-senha' };
+
+    if (path === '/admin' || path.startsWith('/admin/') || hash === 'admin' || hash === 'admin-panel') return { view: 'admin-panel' };
+    if (path === '/painel' || path.startsWith('/painel-profissional') || path === '/pro' || path === '/estudio' || hash === 'painel' || hash === 'pro' || hash === 'photographer-panel') return { view: 'photographer-panel' };
+    if (path === '/blog' || hash === 'blog') return { view: 'blog' };
+    if (path === '/planos' || path === '/anunciar' || hash === 'plans' || hash === 'planos') return { view: 'plans' };
+    if (path === '/comparar' || hash === 'compare') return { view: 'compare' };
+    if (path === '/casamentos' || hash === 'weddings') return { view: 'weddings' };
+    if (path === '/ferramentas' || hash === 'tools') return { view: 'tools' };
+    if (path === '/fotografos' || path === '/buscar' || hash === 'directory') return { view: 'directory' };
+
+    if (path.startsWith('/fotografo/')) {
+      const slug = path.replace('/fotografo/', '');
+      if (slug) return { view: 'profile', slug };
+    }
+
+    return { view: 'home' };
+  };
+
+  const initialRoute = getRouteFromUrl();
+
   // Navigation View state
-  const [currentView, setCurrentView] = useState<string>('home');
+  const [currentView, setCurrentView] = useState<string>(initialRoute.view || 'home');
   const [selectedCity, setSelectedCity] = useState<string>('');
   const [selectedCategory, setSelectedCategory] = useState<CategoryType | 'Todos'>('Todos');
-  const [selectedPhotographerSlug, setSelectedPhotographerSlug] = useState<string>('');
-  
-  // App State Data
-  const [photographersList, setPhotographersList] = useState<Photographer[]>(MOCK_PHOTOGRAPHERS);
-  const [favorites, setFavorites] = useState<string[]>(['p1', 'p2']);
-  const [comparedIds, setComparedIds] = useState<string[]>(['p1', 'p2']);
+  const [selectedPhotographerSlug, setSelectedPhotographerSlug] = useState<string>(initialRoute.slug || '');
+
+  // Auth User Session State
+  const [userSession, setUserSession] = useState<UserSession | null>(null);
+  const [photographerProfile, setPhotographerProfile] = useState<any>(null);
+  const [checkingAuth, setCheckingAuth] = useState<boolean>(true);
+
+  // App State Data from Cloud SQL Database
+  const [photographersList, setPhotographersList] = useState<Photographer[]>([]);
+  const [recentWeddings, setRecentWeddings] = useState<any[]>([]);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [favorites, setFavorites] = useState<string[]>(['1', '2']);
+  const [comparedIds, setComparedIds] = useState<string[]>([]);
 
   // Multi Quote Modal state
   const [isMultiQuoteOpen, setIsMultiQuoteOpen] = useState<boolean>(false);
   const [quotePhotographers, setQuotePhotographers] = useState<Photographer[]>([]);
   const [specificPackageSelected, setSpecificPackageSelected] = useState<PricingPackage | undefined>(undefined);
 
+  // Check user session on app mount (/api/auth/me)
+  useEffect(() => {
+    const checkUserSession = async () => {
+      try {
+        setCheckingAuth(true);
+        const res = await fetch('/api/auth/me');
+        const data = await res.json();
+        if (data.success && data.user) {
+          setUserSession(data.user);
+          if (data.photographerProfile) {
+            setPhotographerProfile(data.photographerProfile);
+          }
+        } else {
+          setUserSession(null);
+          setPhotographerProfile(null);
+        }
+      } catch (err) {
+        setUserSession(null);
+        setPhotographerProfile(null);
+      } finally {
+        setCheckingAuth(false);
+      }
+    };
+
+    checkUserSession();
+  }, []);
+
+  // Sync state from location on load & popstate
+  useEffect(() => {
+    const applyLocationRoute = () => {
+      const route = getRouteFromUrl();
+      if (route.view) {
+        setCurrentView(route.view);
+        if (route.slug) setSelectedPhotographerSlug(route.slug);
+      }
+    };
+
+    window.addEventListener('popstate', applyLocationRoute);
+    return () => window.removeEventListener('popstate', applyLocationRoute);
+  }, []);
+
+  // Centralized View Navigator
+  const navigateToView = (view: string, slug?: string) => {
+    setCurrentView(view);
+    if (slug) setSelectedPhotographerSlug(slug);
+
+    let path = '/';
+    if (view === 'login') path = '/login';
+    else if (view === 'cadastrar-estudio') path = '/cadastrar-estudio';
+    else if (view === 'esqueci-minha-senha') path = '/esqueci-minha-senha';
+    else if (view === 'redefinir-senha') path = '/redefinir-senha';
+    else if (view === 'admin-panel') path = '/admin';
+    else if (view === 'photographer-panel') path = '/painel';
+    else if (view === 'blog') path = '/blog';
+    else if (view === 'plans') path = '/planos';
+    else if (view === 'compare') path = '/comparar';
+    else if (view === 'weddings') path = '/casamentos';
+    else if (view === 'tools') path = '/ferramentas';
+    else if (view === 'directory') path = '/fotografos';
+    else if (view === 'profile' && slug) path = `/fotografo/${slug}`;
+
+    if (window.location.pathname !== path) {
+      window.history.pushState({}, '', path);
+    }
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  // Login Success Callback
+  const handleLoginSuccess = (user: UserSession, pProfile?: any) => {
+    setUserSession(user);
+    if (pProfile) setPhotographerProfile(pProfile);
+
+    if (user.role === 'admin' || user.role === 'super_admin') {
+      navigateToView('admin-panel');
+    } else if (user.role === 'photographer') {
+      navigateToView('photographer-panel');
+    } else {
+      navigateToView('home');
+    }
+  };
+
+  // Logout Handler
+  const handleLogout = async () => {
+    try {
+      await fetch('/api/auth/logout', { method: 'POST' });
+    } catch (err) {
+      console.error('Logout error:', err);
+    } finally {
+      setUserSession(null);
+      setPhotographerProfile(null);
+      navigateToView('login');
+    }
+  };
+
+  // Fetch photographers from API (Cloud SQL Database)
+  const fetchPhotographers = async () => {
+    try {
+      setLoading(true);
+      const res = await fetch('/api/photographers');
+      const data = await res.json();
+      if (data.success && Array.isArray(data.photographers)) {
+        setPhotographersList(data.photographers);
+      }
+    } catch (err) {
+      console.error('Erro ao carregar fotógrafos do banco:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Fetch recent weddings from API
+  const fetchWeddings = async () => {
+    try {
+      const res = await fetch('/api/recent-weddings');
+      const data = await res.json();
+      if (data.success && Array.isArray(data.weddings)) {
+        setRecentWeddings(data.weddings);
+      }
+    } catch (err) {
+      console.error('Erro ao carregar casamentos:', err);
+    }
+  };
+
+  useEffect(() => {
+    fetchPhotographers();
+    fetchWeddings();
+  }, []);
+
   // Toggle Favorite
-  const toggleFavorite = (id: string) => {
+  const toggleFavorite = async (id: string) => {
     setFavorites((prev) =>
       prev.includes(id) ? prev.filter((f) => f !== id) : [...prev, id]
     );
@@ -62,7 +239,7 @@ export default function App() {
       setQuotePhotographers([photographer]);
       setSpecificPackageSelected(pkg);
     } else if (comparedIds.length > 0) {
-      const selected = photographersList.filter((p) => comparedIds.includes(p.id));
+      const selected = photographersList.filter((p) => comparedIds.includes(String(p.id)));
       setQuotePhotographers(selected);
       setSpecificPackageSelected(undefined);
     } else {
@@ -74,30 +251,27 @@ export default function App() {
 
   // View Profile Handler
   const handleViewProfile = (slug: string) => {
-    setSelectedPhotographerSlug(slug);
-    setCurrentView('profile');
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    navigateToView('profile', slug);
   };
 
   // City Search Handler
   const handleSearchCitySubmit = (city: string) => {
     setSelectedCity(city);
-    
+
     // Check if city matches SEO page
     const seoPage = CITY_SEO_PAGES.find((p) => p.city.toLowerCase() === city.toLowerCase());
     if (seoPage) {
-      setCurrentView(`city-${seoPage.city.toLowerCase()}`);
+      navigateToView(`city-${seoPage.city.toLowerCase()}`);
     } else {
-      setCurrentView('directory');
+      navigateToView('directory');
     }
-    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   // Admin Badge Toggle Handler
-  const handleToggleBadge = (photographerId: string, badge: 'Verificado' | 'Top Avaliado' | 'Premium') => {
+  const handleToggleBadge = async (photographerId: string, badge: 'Verificado' | 'Top Avaliado' | 'Premium') => {
     setPhotographersList((prev) =>
       prev.map((p) => {
-        if (p.id === photographerId) {
+        if (String(p.id) === String(photographerId)) {
           const hasBadge = p.badges.includes(badge);
           const updatedBadges = hasBadge
             ? p.badges.filter((b) => b !== badge)
@@ -112,36 +286,42 @@ export default function App() {
   // Update Photographer Handler
   const handleUpdatePhotographer = (updated: Photographer) => {
     setPhotographersList((prev) =>
-      prev.map((p) => (p.id === updated.id ? updated : p))
+      prev.map((p) => (String(p.id) === String(updated.id) ? updated : p))
     );
+    fetchPhotographers();
   };
 
   // Active photographer for profile view
-  const activePhotographer = photographersList.find((p) => p.slug === selectedPhotographerSlug) || photographersList[0];
+  const activePhotographer =
+    photographersList.find((p) => p.slug === selectedPhotographerSlug) || photographersList[0];
 
   return (
     <div className="min-h-screen flex flex-col bg-[#F6EEE8] text-[#5A4035] selection:bg-[#C88E9B] selection:text-white">
-      
       {/* Header */}
       <Header
         currentView={currentView}
-        setCurrentView={(view) => {
-          setCurrentView(view);
-          window.scrollTo({ top: 0, behavior: 'smooth' });
-        }}
+        setCurrentView={(view) => navigateToView(view)}
         favoritesCount={favorites.length}
         compareCount={comparedIds.length}
         openMultiQuote={() => handleOpenQuoteModal()}
         selectedCity={selectedCity}
+        userSession={userSession}
+        onLogout={handleLogout}
       />
 
       {/* Main View Router */}
       <main className="flex-1">
-        
+        {/* Loading Overlay */}
+        {loading && (
+          <div className="fixed bottom-4 right-4 bg-[#5A4035] text-white text-xs px-4 py-2 rounded-full shadow-xl flex items-center gap-2 z-50">
+            <RefreshCw className="w-3.5 h-3.5 animate-spin text-[#C88E9B]" />
+            <span>Sincronizando com Banco MySQL Cloud SQL...</span>
+          </div>
+        )}
+
         {/* VIEW 1: HOME */}
         {currentView === 'home' && (
           <div className="space-y-12">
-            
             {/* Hero Search */}
             <HeroSearch
               selectedCity={selectedCity}
@@ -177,16 +357,19 @@ export default function App() {
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-                {photographersList.filter((p) => p.featuredInHome).map((p) => (
+                {(photographersList.filter((p) => p.featuredInHome).length > 0
+                  ? photographersList.filter((p) => p.featuredInHome)
+                  : photographersList.slice(0, 6)
+                ).map((p) => (
                   <PhotographerCard
                     key={p.id}
                     photographer={p}
                     onViewProfile={handleViewProfile}
                     onOpenQuote={handleOpenQuoteModal}
-                    isFavorite={favorites.includes(p.id)}
-                    onToggleFavorite={toggleFavorite}
-                    isCompared={comparedIds.includes(p.id)}
-                    onToggleCompare={toggleCompare}
+                    isFavorite={favorites.includes(String(p.id))}
+                    onToggleFavorite={() => toggleFavorite(String(p.id))}
+                    isCompared={comparedIds.includes(String(p.id))}
+                    onToggleCompare={() => toggleCompare(String(p.id))}
                   />
                 ))}
               </div>
@@ -218,14 +401,18 @@ export default function App() {
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                {RECENT_WEDDINGS.slice(0, 4).map((w) => (
+                {recentWeddings.slice(0, 4).map((w) => (
                   <div
                     key={w.id}
                     onClick={() => handleViewProfile(w.photographerSlug)}
                     className="bg-white rounded-2xl overflow-hidden border border-[#C88E9B]/20 shadow-xs hover:shadow-lg transition-all cursor-pointer group"
                   >
                     <div className="h-40 overflow-hidden relative">
-                      <img src={w.coverImage} alt={w.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                      <img
+                        src={w.coverImage}
+                        alt={w.title}
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                      />
                       <span className="absolute top-2 left-2 bg-[#5A4035] text-white text-[9px] font-bold px-2 py-0.5 rounded-full">
                         {w.city}
                       </span>
@@ -245,7 +432,7 @@ export default function App() {
                 <div>
                   <span className="text-xs font-bold uppercase tracking-wider text-[#C88E9B]">Depoimentos Reais</span>
                   <h2 className="text-2xl sm:text-3xl font-serif font-bold text-[#5A4035] mt-1">
-                    O que as noivas dizem sobre o Só Fotógrafos
+                    O que as noivas dizem sobre o Guia Fotógrafo Casamento
                   </h2>
                 </div>
 
@@ -305,7 +492,6 @@ export default function App() {
                 </button>
               </div>
             </section>
-
           </div>
         )}
 
@@ -325,15 +511,15 @@ export default function App() {
         )}
 
         {/* VIEW 3: PROFILE VIEW */}
-        {currentView === 'profile' && (
+        {currentView === 'profile' && activePhotographer && (
           <PhotographerProfileView
             photographer={activePhotographer}
             onOpenQuote={handleOpenQuoteModal}
             onBack={() => setCurrentView('directory')}
-            isFavorite={favorites.includes(activePhotographer.id)}
-            onToggleFavorite={toggleFavorite}
-            isCompared={comparedIds.includes(activePhotographer.id)}
-            onToggleCompare={toggleCompare}
+            isFavorite={favorites.includes(String(activePhotographer.id))}
+            onToggleFavorite={() => toggleFavorite(String(activePhotographer.id))}
+            isCompared={comparedIds.includes(String(activePhotographer.id))}
+            onToggleCompare={() => toggleCompare(String(activePhotographer.id))}
           />
         )}
 
@@ -345,7 +531,7 @@ export default function App() {
               CITY_SEO_PAGES[0]
             }
             photographers={photographersList}
-            recentWeddings={RECENT_WEDDINGS}
+            recentWeddings={recentWeddings}
             onViewProfile={handleViewProfile}
             onOpenQuote={handleOpenQuoteModal}
             favorites={favorites}
@@ -373,7 +559,7 @@ export default function App() {
         {/* VIEW 6: RECENT WEDDINGS FEED */}
         {currentView === 'weddings' && (
           <RecentWeddingsFeed
-            weddings={RECENT_WEDDINGS}
+            weddings={recentWeddings}
             onViewPhotographerProfile={handleViewProfile}
             openMultiQuote={() => handleOpenQuoteModal()}
           />
@@ -394,31 +580,92 @@ export default function App() {
           <PlansMonetizationView openMultiQuote={() => handleOpenQuoteModal()} />
         )}
 
-        {/* VIEW 10: PHOTOGRAPHER PANEL (CRM) */}
+        {/* AUTH VIEWS (LOGIN, REGISTER, FORGOT PASSWORD, RESET PASSWORD) */}
+        {['login', 'cadastrar-estudio', 'esqueci-minha-senha', 'redefinir-senha'].includes(currentView) && (
+          <AuthView
+            initialMode={
+              currentView === 'cadastrar-estudio'
+                ? 'register'
+                : currentView === 'esqueci-minha-senha'
+                ? 'forgot'
+                : currentView === 'redefinir-senha'
+                ? 'reset'
+                : 'login'
+            }
+            onLoginSuccess={handleLoginSuccess}
+            onNavigateHome={() => navigateToView('home')}
+          />
+        )}
+
+        {/* VIEW 10: PROTECTED PHOTOGRAPHER PANEL (CRM) */}
         {currentView === 'photographer-panel' && (
-          <PhotographerPanel
-            photographer={photographersList[0]}
-            onUpdatePhotographer={handleUpdatePhotographer}
-          />
+          checkingAuth ? (
+            <div className="py-24 text-center space-y-4 max-w-md mx-auto">
+              <RefreshCw className="w-8 h-8 animate-spin text-[#C88E9B] mx-auto" />
+              <p className="text-sm font-semibold text-[#5A4035]">Verificando autenticação do profissional...</p>
+            </div>
+          ) : !userSession ? (
+            <AuthView
+              initialMode="login"
+              onLoginSuccess={handleLoginSuccess}
+              onNavigateHome={() => navigateToView('home')}
+            />
+          ) : userSession.role !== 'photographer' && userSession.role !== 'admin' && userSession.role !== 'super_admin' ? (
+            <AccessDeniedView
+              requiredRole="Fotógrafo / Estúdio"
+              currentRole={userSession.role}
+              onNavigateToLogin={() => navigateToView('login')}
+              onNavigateToHome={() => navigateToView('home')}
+              onLogout={handleLogout}
+            />
+          ) : (
+            <PhotographerPanel
+              photographer={
+                photographersList.find(p => String(p.id) === String(userSession.photographerId) || p.userUid === userSession.uid) ||
+                photographerProfile ||
+                photographersList[0]
+              }
+              onUpdatePhotographer={handleUpdatePhotographer}
+              onLogout={handleLogout}
+            />
+          )
         )}
 
-        {/* VIEW 11: ADMIN PANEL */}
+        {/* VIEW 11: PROTECTED ADMIN PANEL */}
         {currentView === 'admin-panel' && (
-          <AdminDashboard
-            photographers={photographersList}
-            onToggleBadge={handleToggleBadge}
-            onUpdatePhotographer={handleUpdatePhotographer}
-          />
+          checkingAuth ? (
+            <div className="py-24 text-center space-y-4 max-w-md mx-auto">
+              <RefreshCw className="w-8 h-8 animate-spin text-[#C88E9B] mx-auto" />
+              <p className="text-sm font-semibold text-[#5A4035]">Verificando credenciais de administrador...</p>
+            </div>
+          ) : !userSession ? (
+            <AuthView
+              initialMode="login"
+              onLoginSuccess={handleLoginSuccess}
+              onNavigateHome={() => navigateToView('home')}
+            />
+          ) : userSession.role !== 'admin' && userSession.role !== 'super_admin' ? (
+            <AccessDeniedView
+              requiredRole="Administrador"
+              currentRole={userSession.role}
+              onNavigateToLogin={() => navigateToView('login')}
+              onNavigateToHome={() => navigateToView('home')}
+              onLogout={handleLogout}
+            />
+          ) : (
+            <AdminDashboard
+              photographers={photographersList}
+              onToggleBadge={handleToggleBadge}
+              onUpdatePhotographer={handleUpdatePhotographer}
+              onLogout={handleLogout}
+            />
+          )
         )}
-
       </main>
 
       {/* Footer */}
       <Footer
-        setCurrentView={(v) => {
-          setCurrentView(v);
-          window.scrollTo({ top: 0, behavior: 'smooth' });
-        }}
+        setCurrentView={(v) => navigateToView(v)}
         onSelectCity={handleSearchCitySubmit}
       />
 
@@ -429,7 +676,6 @@ export default function App() {
         selectedPhotographers={quotePhotographers}
         specificPackage={specificPackageSelected}
       />
-
     </div>
   );
 }

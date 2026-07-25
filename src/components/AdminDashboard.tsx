@@ -1,20 +1,28 @@
 import React, { useState } from 'react';
-import { ShieldCheck, Users, Building2, DollarSign, Sparkles, Check, X, Search, Edit, Calendar, AlertTriangle, FileText, Plus, Trash2, Clock, MessageSquare, RefreshCw, Eye } from 'lucide-react';
+import { ShieldCheck, Users, Building2, DollarSign, Sparkles, Check, X, Search, Edit, Calendar, AlertTriangle, FileText, Plus, Trash2, Clock, MessageSquare, RefreshCw, Eye, Tag, MapPin, FolderPlus, LogOut } from 'lucide-react';
 import { BRAZIL_STATES, BLOG_ARTICLES } from '../data/mockData';
 import { Photographer, BlogArticle } from '../types';
+import { AdminCategoriesManager } from './admin/AdminCategoriesManager';
+import { AdminLocationsManager } from './admin/AdminLocationsManager';
+import { AdminPlansManager } from './admin/AdminPlansManager';
+import { AdminInspirationsManager } from './admin/AdminInspirationsManager';
 
 interface AdminDashboardProps {
   photographers: Photographer[];
   onToggleBadge: (photographerId: string, badge: 'Verificado' | 'Top Avaliado' | 'Premium') => void;
   onUpdatePhotographer?: (updated: Photographer) => void;
+  initialTab?: 'plans' | 'subscriptions' | 'studios' | 'blog' | 'overview' | 'categories' | 'locations' | 'inspirations';
+  onLogout?: () => void;
 }
 
 export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   photographers,
   onToggleBadge,
   onUpdatePhotographer,
+  initialTab = 'plans',
+  onLogout,
 }) => {
-  const [activeTab, setActiveTab] = useState<'subscriptions' | 'studios' | 'blog' | 'overview'>('subscriptions');
+  const [activeTab, setActiveTab] = useState<'plans' | 'subscriptions' | 'studios' | 'blog' | 'overview' | 'categories' | 'locations' | 'inspirations'>(initialTab);
   const [subscriptionFilter, setSubscriptionFilter] = useState<'all' | 'active' | 'expiring' | 'expired'>('all');
   const [searchFilter, setSearchFilter] = useState('');
 
@@ -29,7 +37,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   // Blog form fields
   const [blogTitle, setBlogTitle] = useState('');
   const [blogCategory, setBlogCategory] = useState('Dicas de Fotografia');
-  const [blogAuthor, setBlogAuthor] = useState('Equipe Só Fotógrafos');
+  const [blogAuthor, setBlogAuthor] = useState('Equipe Guia Fotógrafo Casamento');
   const [blogExcerpt, setBlogExcerpt] = useState('');
   const [blogContent, setBlogContent] = useState('');
   const [blogImage, setBlogImage] = useState('');
@@ -80,7 +88,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     setEditingBlogPost(null);
     setBlogTitle('');
     setBlogCategory('Dicas de Fotografia');
-    setBlogAuthor('Equipe Só Fotógrafos');
+    setBlogAuthor('Equipe Guia Fotógrafo Casamento');
     setBlogExcerpt('');
     setBlogContent('');
     setBlogImage('https://images.unsplash.com/photo-1519741497674-611481863552?auto=format&fit=crop&w=800&q=80');
@@ -162,15 +170,25 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             <span>Administração do Portal Nacional</span>
           </div>
           <h1 className="text-2xl sm:text-3xl font-serif font-bold">
-            Só Fotógrafos de Casamento • Gestão
+            Guia Fotógrafo Casamento • Gestão
           </h1>
           <p className="text-xs text-white/80">
             Gerenciamento de estúdios, controle financeiro de assinaturas e publicação no blog
           </p>
         </div>
 
-        {/* Top Navigation Tabs */}
+        {/* Top Navigation Tabs & Logout */}
         <div className="flex flex-wrap items-center gap-2 bg-white/10 p-1.5 rounded-2xl border border-white/15 text-xs">
+          <button
+            onClick={() => setActiveTab('plans')}
+            className={`px-3.5 py-2 rounded-xl font-bold transition-all flex items-center gap-1.5 ${
+              activeTab === 'plans' ? 'bg-[#C88E9B] text-white shadow-sm' : 'text-white/80 hover:text-white'
+            }`}
+          >
+            <Sparkles className="w-3.5 h-3.5" />
+            <span>Planos e Assinaturas</span>
+          </button>
+
           <button
             onClick={() => setActiveTab('subscriptions')}
             className={`px-3.5 py-2 rounded-xl font-bold transition-all ${
@@ -187,13 +205,45 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           >
             Gerenciar Estúdios
           </button>
+
+          {/* Cadastros Group */}
+          <div className="h-6 w-px bg-white/20 my-auto hidden sm:block" />
+          <button
+            onClick={() => setActiveTab('categories')}
+            className={`px-3.5 py-2 rounded-xl font-bold transition-all flex items-center gap-1.5 ${
+              activeTab === 'categories' ? 'bg-[#C7A86A] text-[#5A4035]' : 'text-white/80 hover:text-white'
+            }`}
+          >
+            <Tag className="w-3.5 h-3.5" />
+            <span>Categorias</span>
+          </button>
+          <button
+            onClick={() => setActiveTab('locations')}
+            className={`px-3.5 py-2 rounded-xl font-bold transition-all flex items-center gap-1.5 ${
+              activeTab === 'locations' ? 'bg-[#C7A86A] text-[#5A4035]' : 'text-white/80 hover:text-white'
+            }`}
+          >
+            <MapPin className="w-3.5 h-3.5" />
+            <span>Localidades</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('inspirations')}
+            className={`px-3.5 py-2 rounded-xl font-bold transition-all flex items-center gap-1.5 ${
+              activeTab === 'inspirations' ? 'bg-[#C7A86A] text-[#5A4035]' : 'text-white/80 hover:text-white'
+            }`}
+          >
+            <Sparkles className="w-3.5 h-3.5" />
+            <span>Inspirações (Pinterest)</span>
+          </button>
+
           <button
             onClick={() => setActiveTab('blog')}
             className={`px-3.5 py-2 rounded-xl font-bold transition-all ${
               activeTab === 'blog' ? 'bg-[#C88E9B] text-white' : 'text-white/80 hover:text-white'
             }`}
           >
-            Gerenciar Blog
+            Blog
           </button>
           <button
             onClick={() => setActiveTab('overview')}
@@ -201,8 +251,22 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               activeTab === 'overview' ? 'bg-[#C88E9B] text-white' : 'text-white/80 hover:text-white'
             }`}
           >
-            Cobertura & Métricas
+            Visão Geral
           </button>
+
+          {onLogout && (
+            <>
+              <div className="h-6 w-px bg-white/20 my-auto hidden sm:block" />
+              <button
+                onClick={onLogout}
+                className="px-3 py-1.5 rounded-xl font-bold bg-red-500/20 text-red-200 hover:bg-red-500/40 hover:text-white transition-all flex items-center gap-1.5"
+                title="Sair do Painel Administrativo"
+              >
+                <LogOut className="w-3.5 h-3.5" />
+                <span>Sair</span>
+              </button>
+            </>
+          )}
         </div>
       </div>
 
@@ -232,6 +296,18 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           <span className="text-[10px] text-rose-600 font-semibold block mt-1">Aguardando renovação</span>
         </div>
       </div>
+
+      {/* TAB: PLANOS E ASSINATURAS */}
+      {activeTab === 'plans' && <AdminPlansManager />}
+
+      {/* TAB: CATEGORIAS DE SERVIÇOS */}
+      {activeTab === 'categories' && <AdminCategoriesManager />}
+
+      {/* TAB: ESTADOS E CIDADES */}
+      {activeTab === 'locations' && <AdminLocationsManager />}
+
+      {/* TAB: INSPIRAÇÕES (PINTEREST INTERNO) */}
+      {activeTab === 'inspirations' && <AdminInspirationsManager />}
 
       {/* TAB 1: GESTÃO DE ASSINATURAS */}
       {activeTab === 'subscriptions' && (

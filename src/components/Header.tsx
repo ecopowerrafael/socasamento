@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { Camera, Heart, Scale, Sparkles, Building2, UserCheck, ShieldCheck, Menu, X, Search, FileText } from 'lucide-react';
+import { Camera, Scale, Sparkles, Menu, X, Search, User, LogOut, ShieldCheck } from 'lucide-react';
+import { UserSession } from '../types';
 
 interface HeaderProps {
   currentView: string;
@@ -8,14 +9,17 @@ interface HeaderProps {
   compareCount: number;
   openMultiQuote: () => void;
   selectedCity?: string;
+  userSession?: UserSession | null;
+  onLogout?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
   currentView,
   setCurrentView,
-  favoritesCount,
   compareCount,
   openMultiQuote,
+  userSession,
+  onLogout,
 }) => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
@@ -24,8 +28,6 @@ export const Header: React.FC<HeaderProps> = ({
     { id: 'compare', label: 'Comparar', count: compareCount, icon: Scale },
     { id: 'weddings', label: 'Casamentos Reais', icon: Camera },
     { id: 'tools', label: 'Ferramentas Noivas', icon: Sparkles },
-    { id: 'blog', label: 'Blog SEO', icon: FileText },
-    { id: 'plans', label: 'Anunciar Estúdio', icon: ShieldCheck },
   ];
 
   return (
@@ -34,13 +36,6 @@ export const Header: React.FC<HeaderProps> = ({
       <div className="bg-[#5A4035] text-[#F6EEE8] text-xs py-1.5 px-4 text-center font-medium flex items-center justify-center gap-2">
         <span className="inline-block w-2 h-2 rounded-full bg-[#C7A86A] animate-pulse"></span>
         <span>O maior portal especializado exclusivo para Fotógrafos de Casamento do Brasil</span>
-        <span className="hidden md:inline text-[#C88E9B]">•</span>
-        <button
-          onClick={() => setCurrentView('plans')}
-          className="hidden md:inline text-[#C7A86A] hover:underline font-semibold"
-        >
-          Cadastre seu estúdio grátis
-        </button>
       </div>
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -53,7 +48,7 @@ export const Header: React.FC<HeaderProps> = ({
           >
             <img 
               src="https://loteria.rafaelaugusto.shop/wp-content/uploads/2026/07/ChatGPT-Image-23-de-jul.-de-2026-13_34_25.png" 
-              alt="Só Fotógrafos" 
+              alt="Guia Fotógrafo Casamento" 
               referrerPolicy="no-referrer"
               className="h-11 sm:h-13 max-w-[200px] sm:max-w-[260px] object-contain transition-transform group-hover:scale-105"
             />
@@ -68,7 +63,7 @@ export const Header: React.FC<HeaderProps> = ({
                 <button
                   key={item.id}
                   onClick={() => setCurrentView(item.id)}
-                  className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-all relative ${
+                  className={`flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-sm font-medium transition-all relative ${
                     isActive
                       ? 'bg-[#C88E9B]/15 text-[#5A4035] font-semibold border border-[#C88E9B]/30'
                       : 'text-[#5A4035]/80 hover:text-[#5A4035] hover:bg-[#C88E9B]/10'
@@ -86,41 +81,70 @@ export const Header: React.FC<HeaderProps> = ({
             })}
           </nav>
 
-          {/* Action CTAs */}
+          {/* Action CTAs & Auth User Session */}
           <div className="hidden md:flex items-center gap-3">
             {/* Multi quote button */}
             <button
               onClick={openMultiQuote}
-              className="flex items-center gap-2 bg-[#C88E9B] hover:bg-[#b07885] text-white px-4 py-2.5 rounded-xl text-sm font-semibold shadow-sm transition-all hover:shadow-md active:scale-95"
+              className="flex items-center gap-2 bg-[#C88E9B] hover:bg-[#b07885] text-white px-4 py-2 rounded-xl text-xs font-semibold shadow-sm transition-all hover:shadow-md active:scale-95"
             >
-              <Sparkles className="w-4 h-4 text-[#C7A86A]" />
+              <Sparkles className="w-3.5 h-3.5 text-[#C7A86A]" />
               <span>Cotação Múltipla</span>
             </button>
 
-            {/* Portal Role Switchers */}
-            <div className="flex items-center bg-white/80 border border-[#5A4035]/15 rounded-xl p-1 gap-1">
-              <button
-                onClick={() => setCurrentView('photographer-panel')}
-                className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1 transition-colors ${
-                  currentView === 'photographer-panel' ? 'bg-[#5A4035] text-white' : 'text-[#5A4035]/80 hover:bg-[#F6EEE8]'
-                }`}
-                title="Painel do Fotógrafo"
-              >
-                <UserCheck className="w-3.5 h-3.5" />
-                <span>Painel Pro</span>
-              </button>
+            {/* Account Status / Login */}
+            {userSession ? (
+              <div className="flex items-center gap-2 bg-white/80 border border-[#5A4035]/15 p-1.5 pl-3 rounded-xl">
+                <div className="text-left leading-tight">
+                  <span className="block text-xs font-bold text-[#5A4035] truncate max-w-[120px]">
+                    {userSession.name || userSession.email}
+                  </span>
+                  <span className="block text-[10px] font-semibold text-[#C88E9B] uppercase">
+                    {userSession.role === 'admin' || userSession.role === 'super_admin' ? '👑 Admin' : userSession.role === 'photographer' ? '📷 Fotógrafo' : '💍 Cliente'}
+                  </span>
+                </div>
 
+                <div className="flex items-center gap-1 border-l border-[#5A4035]/10 pl-2">
+                  {(userSession.role === 'admin' || userSession.role === 'super_admin') && (
+                    <button
+                      onClick={() => setCurrentView('admin-panel')}
+                      className="p-1.5 bg-[#5A4035] text-white hover:bg-[#C7A86A] hover:text-[#5A4035] rounded-lg transition-colors text-xs font-bold"
+                      title="Ir para o Painel Administrativo"
+                    >
+                      <ShieldCheck className="w-4 h-4" />
+                    </button>
+                  )}
+
+                  {(userSession.role === 'photographer' || userSession.role === 'admin' || userSession.role === 'super_admin') && (
+                    <button
+                      onClick={() => setCurrentView('photographer-panel')}
+                      className="p-1.5 bg-[#C88E9B] text-white hover:bg-[#b07885] rounded-lg transition-colors text-xs font-bold"
+                      title="Ir para o Painel do Profissional"
+                    >
+                      <User className="w-4 h-4" />
+                    </button>
+                  )}
+
+                  {onLogout && (
+                    <button
+                      onClick={onLogout}
+                      className="p-1.5 bg-red-50 text-red-600 hover:bg-red-100 rounded-lg transition-colors text-xs font-bold"
+                      title="Sair da Conta (Logout)"
+                    >
+                      <LogOut className="w-4 h-4" />
+                    </button>
+                  )}
+                </div>
+              </div>
+            ) : (
               <button
-                onClick={() => setCurrentView('admin-panel')}
-                className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1 transition-colors ${
-                  currentView === 'admin-panel' ? 'bg-[#C7A86A] text-[#5A4035]' : 'text-[#5A4035]/80 hover:bg-[#F6EEE8]'
-                }`}
-                title="Painel Administrativo"
+                onClick={() => setCurrentView('login')}
+                className="flex items-center gap-1.5 border border-[#5A4035]/20 hover:border-[#C88E9B] bg-white hover:bg-[#FAF5F0] text-[#5A4035] px-3.5 py-2 rounded-xl text-xs font-bold transition-all"
               >
-                <ShieldCheck className="w-3.5 h-3.5" />
-                <span>Admin</span>
+                <User className="w-4 h-4 text-[#C88E9B]" />
+                <span>Entrar / Login</span>
               </button>
-            </div>
+            )}
           </div>
 
           {/* Mobile Menu Button */}
@@ -146,8 +170,8 @@ export const Header: React.FC<HeaderProps> = ({
 
       {/* Mobile Drawer Menu */}
       {mobileMenuOpen && (
-        <div className="lg:hidden bg-[#FAF5F0] border-b border-[#C88E9B]/30 px-4 pt-3 pb-6 space-y-2">
-          <div className="grid grid-cols-2 gap-2 mb-3">
+        <div className="lg:hidden bg-[#FAF5F0] border-b border-[#C88E9B]/30 px-4 pt-3 pb-6 space-y-3">
+          <div className="grid grid-cols-2 gap-2">
             {navItems.map((item) => {
               const Icon = item.icon;
               return (
@@ -168,27 +192,38 @@ export const Header: React.FC<HeaderProps> = ({
             })}
           </div>
 
-          <div className="pt-2 border-t border-[#5A4035]/10 flex flex-col gap-2">
-            <button
-              onClick={() => {
-                setCurrentView('photographer-panel');
-                setMobileMenuOpen(false);
-              }}
-              className="w-full py-2.5 bg-[#5A4035] text-white rounded-xl text-sm font-semibold flex items-center justify-center gap-2"
-            >
-              <UserCheck className="w-4 h-4 text-[#C7A86A]" />
-              Área do Fotógrafo (CRM / Leads)
-            </button>
-            <button
-              onClick={() => {
-                setCurrentView('admin-panel');
-                setMobileMenuOpen(false);
-              }}
-              className="w-full py-2.5 bg-[#C7A86A] text-[#5A4035] rounded-xl text-sm font-semibold flex items-center justify-center gap-2"
-            >
-              <ShieldCheck className="w-4 h-4" />
-              Painel Administrativo do Portal
-            </button>
+          {/* Mobile Account Section */}
+          <div className="pt-2 border-t border-[#5A4035]/10">
+            {userSession ? (
+              <div className="flex items-center justify-between bg-white p-3 rounded-xl border border-[#5A4035]/10">
+                <div>
+                  <span className="block text-xs font-bold text-[#5A4035]">{userSession.name}</span>
+                  <span className="block text-[10px] text-[#C88E9B] uppercase font-bold">{userSession.role}</span>
+                </div>
+                {onLogout && (
+                  <button
+                    onClick={() => {
+                      onLogout();
+                      setMobileMenuOpen(false);
+                    }}
+                    className="px-3 py-1 bg-red-50 text-red-600 text-xs font-bold rounded-lg"
+                  >
+                    Sair
+                  </button>
+                )}
+              </div>
+            ) : (
+              <button
+                onClick={() => {
+                  setCurrentView('login');
+                  setMobileMenuOpen(false);
+                }}
+                className="w-full py-2.5 bg-[#5A4035] text-white font-bold text-xs rounded-xl flex items-center justify-center gap-2"
+              >
+                <User className="w-4 h-4 text-[#C7A86A]" />
+                <span>Entrar / Área do Profissional</span>
+              </button>
+            )}
           </div>
         </div>
       )}

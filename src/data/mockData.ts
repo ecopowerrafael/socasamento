@@ -490,7 +490,7 @@ Não se baseie apenas no Instagram ou nas melhores fotos do portfólio. Peça pa
 - O contrato inclui direitos de uso e galeria digital sem marca d'água?
     `,
     category: 'Dicas de Fotografia',
-    author: 'Equipe Só Fotógrafos',
+    author: 'Equipe Guia Fotógrafo Casamento',
     date: '15 de Março de 2026',
     readTime: '6 min de leitura',
     image: 'https://images.unsplash.com/photo-1519741497674-611481863552?auto=format&fit=crop&w=800&q=80',
@@ -555,7 +555,7 @@ export const CITY_SEO_PAGES: CitySEOData[] = [
     seoDescription: 'Diretório completo com os mais renomados fotógrafos de casamento de SP. Filtre por bairro (Pinheiros, Moema, Jardins, Tatuapé), estilo e faixa de preço.',
     introText: 'São Paulo abriga os estúdios de fotografia mais premiados do país. Desde minicasamentos urbanos em rooftops até mega produções nos salões e igrejas históricas da capital.',
     faq: [
-      { question: 'Como contratar fotógrafo por bairro em São Paulo?', answer: 'No portal Só Fotógrafos você pode filtrar profissionais por Pinheiros, Moema, Jardins, Tatuapé, Zona Sul, Norte e Oeste.' }
+      { question: 'Como contratar fotógrafo por bairro em São Paulo?', answer: 'No portal Guia Fotógrafo Casamento você pode filtrar profissionais por Pinheiros, Moema, Jardins, Tatuapé, Zona Sul, Norte e Oeste.' }
     ]
   },
   {
@@ -574,7 +574,7 @@ export const CITY_SEO_PAGES: CitySEOData[] = [
 export const INITIAL_CHECKLIST: ChecklistItem[] = [
   { id: 'chk1', task: 'Definir estilo de fotografia desejado (Fine Art, Fotojornalismo, Boho, Clássico)', timeframe: '12 a 10 meses antes', completed: true, category: 'Análise' },
   { id: 'chk2', task: 'Simular orçamento de fotografia e definir teto de gasto', timeframe: '12 a 10 meses antes', completed: true, category: 'Análise' },
-  { id: 'chk3', task: 'Pesquisar fotógrafos no portal Só Fotógrafos de Casamento por cidade', timeframe: '10 a 8 meses antes', completed: false, category: 'Fotografia' },
+  { id: 'chk3', task: 'Pesquisar fotógrafos no portal Guia Fotógrafo Casamento por cidade', timeframe: '10 a 8 meses antes', completed: false, category: 'Fotografia' },
   { id: 'chk4', task: 'Solicitar orçamento para 3 a 4 fotógrafos e comparar propostas', timeframe: '10 a 8 meses antes', completed: false, category: 'Fotografia' },
   { id: 'chk5', task: 'Agendar reunião presencial ou chamada de vídeo para sentir a afinidade', timeframe: '8 a 6 meses antes', completed: false, category: 'Fotografia' },
   { id: 'chk6', task: 'Assinar contrato de fotografia e filme garantindo a data na agenda', timeframe: '8 a 6 meses antes', completed: false, category: 'Contrato' },

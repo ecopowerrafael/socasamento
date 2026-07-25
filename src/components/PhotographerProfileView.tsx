@@ -503,7 +503,7 @@ export const PhotographerProfileView: React.FC<PhotographerProfileViewProps> = (
               <div className="bg-[#FAF5F0] p-4 rounded-2xl border border-[#C7A86A]/40 text-[11px] text-[#5A4035] space-y-1">
                 <span className="font-bold text-[#5A4035] flex items-center gap-1">
                   <ShieldCheck className="w-4 h-4 text-[#C7A86A]" />
-                  <span>Segurança Só Fotógrafos:</span>
+                  <span>Segurança Guia Fotógrafo Casamento:</span>
                 </span>
                 <p className="text-[#5A4035]/80">
                   Estúdio auditado e certificado pelo portal com contrato padrão de prestação de serviços.

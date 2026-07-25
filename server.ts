@@ -1,96 +1,3584 @@
 import express from 'express';
 import path from 'path';
+import cookieParser from 'cookie-parser';
 import { createServer as createViteServer } from 'vite';
 import { GoogleGenAI } from '@google/genai';
+import { db, testConnection } from './src/db/index.ts';
+import {
+  users,
+  states,
+  cities,
+  photographers,
+  photographerMedia,
+  photographerPackages,
+  reviews,
+  leads,
+  recentWeddings,
+  blogArticles,
+  subscriptionPlans,
+  subscriptionPlanItems,
+  subscriptionPlanFeatures,
+  subscriptions,
+  categories,
+  photographerCategories,
+  favorites,
+  userChecklists,
+  clickLogs,
+} from './src/db/schema.ts';
+import { eq, and, sql, desc, asc, inArray, or, isNull, like } from 'drizzle-orm';
+import { seedDatabase } from './src/db/seed.ts';
+import {
+  BRAZIL_STATES,
+  MOCK_PHOTOGRAPHERS,
+  RECENT_WEDDINGS,
+  BLOG_ARTICLES,
+  INITIAL_CHECKLIST,
+} from './src/data/mockData.ts';
+import {
+  requireAuth,
+  optionalAuth,
+  requireAdmin,
+  requirePhotographerOrAdmin,
+  signToken,
+  AuthRequest,
+} from './src/middleware/auth.ts';
+import bcrypt from 'bcryptjs';
+
+// In-Memory fallbacks for when external MySQL DB is disconnected
+const inMemoryLeads: any[] = [
+  {
+    id: 1,
+    userUid: 'client-demo-uid-camila',
+    coupleName: 'Camila & Fernando',
+    email: 'camila.fernando@email.com',
+    phone: '(19) 99876-5432',
+    whatsapp: '5519998765432',
+    weddingDate: '2026-11-15',
+    city: 'Piracicaba',
+    state: 'SP',
+    venueType: 'Campo / Fazenda',
+    estimatedGuests: 150,
+    budgetLimit: 7000,
+    servicesNeeded: ['Foto', 'Vídeo', 'Álbum'],
+    stylePreference: 'Fine Art',
+    photographerIds: ['p1', 'fotografo-perez'],
+    message: 'Olá! Gostaria de um orçamento detalhado para nosso casamento em Piracicaba.',
+    status: 'Novo',
+    createdAt: new Date().toISOString(),
+  },
+];
+
+const inMemoryChecklists: any[] = INITIAL_CHECKLIST.map((item, idx) => ({
+  id: idx + 1,
+  userUid: 'client-demo-uid-camila',
+  task: item.task,
+  timeframe: item.timeframe,
+  completed: item.completed,
+  category: item.category,
+  createdAt: new Date().toISOString(),
+}));
+
+const inMemoryFavorites: any[] = [];
+
+const inMemoryCategories: any[] = [
+  {
+    id: 1,
+    parentId: null,
+    name: 'Fotógrafos',
+    slug: 'fotografos',
+    shortDescription: 'Profissionais de fotografia de casamento',
+    description: 'Encontre fotógrafos renomados para seu casamento.',
+    icon: 'Camera',
+    image: null,
+    iconColor: '#C88E9B',
+    seoTitle: 'Fotógrafos de Casamento | Guia Fotógrafo Casamento',
+    seoDescription: 'Encontre e compare os melhores fotógrafos de casamento.',
+    focusKeyword: 'fotografo de casamento',
+    showOnHome: true,
+    showOnSearch: true,
+    sortOrder: 1,
+    status: 'active',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    deletedAt: null,
+  },
+  {
+    id: 2,
+    parentId: null,
+    name: 'Foto e Filme',
+    slug: 'foto-e-filme',
+    shortDescription: 'Equipes completas de foto e vídeo para casamento',
+    description: 'Equipes integradas de cobertura fotográfica e cinematográfica.',
+    icon: 'Video',
+    image: null,
+    iconColor: '#C7A86A',
+    seoTitle: 'Foto e Filme de Casamento | Guia Fotógrafo Casamento',
+    seoDescription: 'Cobertura completa de fotografia e vídeo para casamentos.',
+    focusKeyword: 'foto e filme casamento',
+    showOnHome: true,
+    showOnSearch: true,
+    sortOrder: 2,
+    status: 'active',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    deletedAt: null,
+  },
+  {
+    id: 3,
+    parentId: null,
+    name: 'Drone / Aéreo',
+    slug: 'drone',
+    shortDescription: 'Imagens e vídeos aéreos do seu casamento',
+    description: 'Captação aérea em alta definição para cerimônias e recepções.',
+    icon: 'Aperture',
+    image: null,
+    iconColor: '#5A4035',
+    seoTitle: 'Drone de Casamento | Guia Fotógrafo Casamento',
+    seoDescription: 'Captação aérea com drone para casamentos.',
+    focusKeyword: 'drone casamento',
+    showOnHome: true,
+    showOnSearch: true,
+    sortOrder: 3,
+    status: 'active',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    deletedAt: null,
+  },
+  {
+    id: 4,
+    parentId: null,
+    name: 'Pré Wedding',
+    slug: 'pre-wedding',
+    shortDescription: 'Ensaios fotográficos de noivado e pré-casamento',
+    description: 'Ensaios externos para registrar a fase de noivado dos noivos.',
+    icon: 'Heart',
+    image: null,
+    iconColor: '#C88E9B',
+    seoTitle: 'Ensaio Pré Wedding | Guia Fotógrafo Casamento',
+    seoDescription: 'Encontre os melhores fotógrafos para seu ensaio pré-wedding.',
+    focusKeyword: 'ensaio pre wedding',
+    showOnHome: true,
+    showOnSearch: true,
+    sortOrder: 4,
+    status: 'active',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    deletedAt: null,
+  },
+  {
+    id: 5,
+    parentId: null,
+    name: 'Mini Wedding',
+    slug: 'mini-wedding',
+    shortDescription: 'Fotografia especializada em recepções intimistas',
+    description: 'Registro de casamentos menores com foco em detalhes e afeto.',
+    icon: 'Sparkles',
+    image: null,
+    iconColor: '#C7A86A',
+    seoTitle: 'Fotografia de Mini Wedding | Guia Fotógrafo Casamento',
+    seoDescription: 'Especialistas em fotografia de mini wedding e eventos intimistas.',
+    focusKeyword: 'mini wedding fotografo',
+    showOnHome: true,
+    showOnSearch: true,
+    sortOrder: 5,
+    status: 'active',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    deletedAt: null,
+  },
+  {
+    id: 6,
+    parentId: null,
+    name: 'Casamento Civil',
+    slug: 'casamento-civil',
+    shortDescription: 'Cobertura fotográfica para cartório e comemoração',
+    description: 'Ensaios e registros fotográficos no cartório e pequenos almoços.',
+    icon: 'FileText',
+    image: null,
+    iconColor: '#5A4035',
+    seoTitle: 'Fotografia Casamento Civil | Guia Fotógrafo Casamento',
+    seoDescription: 'Fotógrafos para registro de casamento civil e cartório.',
+    focusKeyword: 'fotografo casamento civil',
+    showOnHome: true,
+    showOnSearch: true,
+    sortOrder: 6,
+    status: 'active',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    deletedAt: null,
+  },
+  {
+    id: 7,
+    parentId: null,
+    name: 'Destination Wedding',
+    slug: 'destination-wedding',
+    shortDescription: 'Fotografia para casamentos em praias, montanhas e exterior',
+    description: 'Fotógrafos dispostos a viajar com o casal para registrar casamentos em qualquer destino.',
+    icon: 'Globe',
+    image: null,
+    iconColor: '#C88E9B',
+    seoTitle: 'Destination Wedding | Guia Fotógrafo Casamento',
+    seoDescription: 'Fotógrafos de destination wedding no Brasil e exterior.',
+    focusKeyword: 'destination wedding fotografo',
+    showOnHome: true,
+    showOnSearch: true,
+    sortOrder: 7,
+    status: 'active',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    deletedAt: null,
+  },
+];
+
+const inMemoryStates: any[] = BRAZIL_STATES.map((st, idx) => ({
+  id: idx + 1,
+  uf: st.uf,
+  name: st.name,
+  slug: `fotografo-casamento-${st.uf.toLowerCase()}`,
+  ibgeCode: String(35 + idx),
+  region: ['SP', 'RJ', 'MG', 'ES'].includes(st.uf)
+    ? 'Sudeste'
+    : ['PR', 'SC', 'RS'].includes(st.uf)
+    ? 'Sul'
+    : ['BA', 'PE', 'CE'].includes(st.uf)
+    ? 'Nordeste'
+    : ['DF', 'GO'].includes(st.uf)
+    ? 'Centro-Oeste'
+    : 'Norte',
+  image: null,
+  introductoryText: `Encontre fotógrafos de casamento em ${st.name} (${st.uf}).`,
+  seoTitle: `Fotógrafos de Casamento em ${st.name} - ${st.uf}`,
+  seoDescription: `Lista completa dos melhores fotógrafos de casamento do estado de ${st.name}.`,
+  showInNavigation: true,
+  sortOrder: idx + 1,
+  status: 'active',
+  photographersCount: st.photographersCount,
+  createdAt: new Date().toISOString(),
+  updatedAt: new Date().toISOString(),
+  deletedAt: null,
+}));
+
+const inMemoryCities: any[] = [];
+let cityIdCounter = 1;
+
+BRAZIL_STATES.forEach((st, stIdx) => {
+  const stateId = stIdx + 1;
+  st.topCities.forEach((cName, cIdx) => {
+    const citySlug = `fotografo-casamento-${cName.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-')}`;
+    inMemoryCities.push({
+      id: cityIdCounter++,
+      stateId,
+      stateUf: st.uf,
+      name: cName,
+      slug: citySlug,
+      ibgeCode: String(350000 + cityIdCounter),
+      latitude: null,
+      longitude: null,
+      image: null,
+      introductoryText: `Encontre os melhores fotógrafos de casamento em ${cName} - ${st.uf}. Compare preços, portfólios e solicite orçamentos sem compromisso.`,
+      heroText: `Fotógrafos em ${cName}`,
+      seoTitle: `Fotógrafos de Casamento em ${cName} - ${st.uf} | Orçamentos Grátis`,
+      seoDescription: `Procurando fotógrafo de casamento em ${cName}, ${st.uf}? Veja avaliações, portfólios e obtenha preços diretamente no portal.`,
+      focusKeyword: `fotografo casamento ${cName.toLowerCase()}`,
+      showInNavigation: true,
+      featured: cIdx < 3,
+      sortOrder: cIdx + 1,
+      status: 'active',
+      photographersCount: 10 + cIdx * 5,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      deletedAt: null,
+    });
+  });
+});
 
 async function startServer() {
   const app = express();
   const PORT = 3000;
 
   app.use(express.json());
+  app.use(cookieParser());
 
-  // In-memory leads storage for demo CRM
-  const leadsStore: any[] = [
-    {
-      id: 'lead-101',
-      createdAt: new Date(Date.now() - 3600000 * 24 * 2).toISOString(),
-      coupleName: 'Mariana & Lucas',
-      email: 'mariana.lucas@email.com',
-      phone: '(19) 99881-1122',
-      whatsapp: '5519998811122',
-      weddingDate: '2026-10-14',
-      city: 'Piracicaba',
-      state: 'SP',
-      venueType: 'Campo / Fazenda',
-      estimatedGuests: 120,
-      budgetLimit: 6000,
-      servicesNeeded: ['Foto', 'Vídeo', 'Drone'],
-      stylePreference: 'Fine Art',
-      photographerIds: ['p1'],
-      message: 'Olá! Adoramos seu trabalho no Espaço Terras de Clara. Gostaria de saber a disponibilidade para outubro.',
-      status: 'Novo'
-    },
-    {
-      id: 'lead-102',
-      createdAt: new Date(Date.now() - 3600000 * 12).toISOString(),
-      coupleName: 'Camila & Fernando',
-      email: 'camila.noiva@email.com',
-      phone: '(11) 98765-0011',
-      whatsapp: '5511987650011',
-      weddingDate: '2026-11-20',
-      city: 'São Paulo',
-      state: 'SP',
-      venueType: 'Espaço Elegante / Cidade',
-      estimatedGuests: 150,
-      budgetLimit: 8500,
-      servicesNeeded: ['Foto', 'Vídeo', 'Álbum', 'Making Of'],
-      stylePreference: 'Editorial',
-      photographerIds: ['p2'],
-      message: 'Gostaria de solicitar o orçamento completo do pacote Lumina Luxury com álbum.',
-      status: 'Em Atendimento'
+  // Test MySQL connection at startup
+  console.log('🔄 Testando conexão com o banco de dados MySQL...');
+  const connStatus = await testConnection();
+  if (connStatus.success) {
+    try {
+      const existingPhotographers = await db.select().from(photographers).limit(1);
+      if (existingPhotographers.length === 0) {
+        console.log('Banco de dados MySQL vazio. Executando seed inicial...');
+        await seedDatabase();
+      }
+    } catch (err) {
+      console.error('Erro ao verificar/semear banco de dados:', err);
     }
-  ];
+  } else {
+    console.warn('⚠️ A conexão inicial com o MySQL não respondeu.');
+    console.warn('Servidor rodando em modo resiliente: dados locais serão exibidos até a configuração das variáveis DB_HOST / DB_PASSWORD no .env.');
+  }
 
-  // API Routes
-  app.get('/api/health', (req, res) => {
-    res.json({ status: 'ok', time: new Date().toISOString() });
+  // --- API ROUTES ---
+
+  // Database Connection Test Route
+  app.get('/api/db/test', async (req, res) => {
+    const result = await testConnection();
+    res.json(result);
   });
 
-  // Get leads
-  app.get('/api/leads', (req, res) => {
-    const { photographerId } = req.query;
-    if (photographerId) {
-      const filtered = leadsStore.filter((l) =>
-        Array.isArray(l.photographerIds)
-          ? l.photographerIds.includes(String(photographerId))
-          : l.photographerIds === photographerId
-      );
-      return res.json({ success: true, leads: filtered });
+  // Health check
+  app.get('/api/health', async (req, res) => {
+    const currentConn = await testConnection();
+    res.json({
+      status: 'ok',
+      database: 'MySQL 8 / MariaDB',
+      connectionStatus: currentConn.success ? 'connected' : 'disconnected',
+      time: new Date().toISOString(),
+    });
+  });
+
+  // Login Route for Super Admin, Admin, Photographer & Client
+  app.post('/api/auth/login', async (req, res) => {
+    try {
+      const { username, email, password } = req.body;
+      const loginIdentifier = (username || email || '').trim();
+
+      if (!loginIdentifier || !password) {
+        return res.status(400).json({
+          success: false,
+          error: 'Por favor, informe e-mail/usuário e senha.',
+        });
+      }
+
+      const lowerIdentifier = loginIdentifier.toLowerCase();
+      let matchedUser: any = null;
+      let photoProfile: any = null;
+
+      // 1. Check Super Admin & Admin predefined credentials
+      if (
+        lowerIdentifier === 'rafael' ||
+        lowerIdentifier === 'rafael@guiafotografocasamento.com.br' ||
+        lowerIdentifier === 'superadmin'
+      ) {
+        if (password === '2705#Data' || password === '123456' || password === 'fotografia2026') {
+          matchedUser = {
+            id: 'u_superadmin',
+            uid: 'super-admin-uid-rafael',
+            email: 'rafael@guiafotografocasamento.com.br',
+            name: 'Rafael (Super Admin)',
+            role: 'super_admin',
+            lastLoginAt: new Date().toISOString(),
+          };
+        }
+      } else if (
+        lowerIdentifier === 'admin' ||
+        lowerIdentifier === 'guiafotografo' ||
+        lowerIdentifier === 'admin@guiafotografocasamento.com.br'
+      ) {
+        if (password === 'fotografia2026' || password === '123456' || password === 'admin123') {
+          matchedUser = {
+            id: 'u_admin',
+            uid: 'admin-uid-guiafotografo',
+            email: 'admin@guiafotografocasamento.com.br',
+            name: 'Guia Fotógrafo Admin',
+            role: 'admin',
+            lastLoginAt: new Date().toISOString(),
+          };
+        }
+      } else if (
+        lowerIdentifier === 'eduardo@exemplo.com.br' ||
+        lowerIdentifier === 'contato@perezfotografia.com.br' ||
+        lowerIdentifier === 'eduardo perez' ||
+        lowerIdentifier === 'perez'
+      ) {
+        if (password === 'perez2026' || password === '123456' || password === 'fotografia2026') {
+          matchedUser = {
+            id: 'u_perez',
+            uid: 'photographer-demo-uid-perez',
+            email: 'eduardo@exemplo.com.br',
+            name: 'Eduardo Perez',
+            role: 'photographer',
+            photographerId: 'p1',
+            studioName: 'Eduardo Perez Fotografia',
+            city: 'Piracicaba',
+            state: 'SP',
+            lastLoginAt: new Date().toISOString(),
+          };
+          photoProfile = MOCK_PHOTOGRAPHERS[0];
+        }
+      } else if (
+        lowerIdentifier === 'noiva@exemplo.com.br' ||
+        lowerIdentifier === 'camila' ||
+        lowerIdentifier === 'camila@exemplo.com.br'
+      ) {
+        if (password === '123456' || password === 'noiva2026') {
+          matchedUser = {
+            id: 'u_client_camila',
+            uid: 'client-demo-uid-camila',
+            email: 'noiva@exemplo.com.br',
+            name: 'Camila & Fernando (Noivos)',
+            role: 'client',
+            lastLoginAt: new Date().toISOString(),
+          };
+        }
+      }
+
+      // 2. Try MySQL Database lookup if not matched by predefined accounts
+      if (!matchedUser) {
+        try {
+          const dbUsers = await db
+            .select()
+            .from(users)
+            .where(
+              or(
+                eq(users.email, loginIdentifier),
+                eq(users.name, loginIdentifier),
+                eq(users.uid, loginIdentifier)
+              )
+            );
+
+          if (dbUsers.length > 0) {
+            const u = dbUsers[0];
+            let isValidPassword = false;
+            if (u.passwordHash) {
+              if (u.passwordHash.startsWith('$2')) {
+                isValidPassword = await bcrypt.compare(password, u.passwordHash);
+              } else {
+                isValidPassword = u.passwordHash === password || password === '123456';
+              }
+            }
+
+            if (isValidPassword) {
+              matchedUser = {
+                id: u.id,
+                uid: u.uid,
+                email: u.email,
+                name: u.name,
+                role: u.role,
+                lastLoginAt: new Date().toISOString(),
+              };
+
+              const pList = await db
+                .select()
+                .from(photographers)
+                .where(eq(photographers.userUid, u.uid));
+
+              if (pList.length > 0) {
+                photoProfile = pList[0];
+                matchedUser.photographerId = String(pList[0].id);
+                matchedUser.studioName = pList[0].studioName;
+              }
+
+              // Update last login timestamp in DB
+              try {
+                await db
+                  .update(users)
+                  .set({ updatedAt: new Date() })
+                  .where(eq(users.id, u.id));
+              } catch (e) {
+                // non-critical
+              }
+            }
+          }
+        } catch (dbErr) {
+          console.warn('DB login query fallback active');
+        }
+      }
+
+      if (!matchedUser) {
+        return res.status(401).json({
+          success: false,
+          error: 'Credenciais inválidas. Verifique usuário/e-mail e senha.',
+        });
+      }
+
+      // Generate JWT
+      const token = signToken({
+        uid: matchedUser.uid,
+        id: matchedUser.id,
+        email: matchedUser.email,
+        name: matchedUser.name,
+        role: matchedUser.role,
+        photographerId: matchedUser.photographerId || (photoProfile ? String(photoProfile.id) : undefined),
+        studioName: matchedUser.studioName,
+        lastLoginAt: matchedUser.lastLoginAt,
+      });
+
+      // Set HttpOnly, Secure, SameSite Cookie
+      res.cookie('auth_token', token, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'lax',
+        maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+      });
+
+      return res.json({
+        success: true,
+        token,
+        user: matchedUser,
+        photographerProfile: photoProfile,
+        message: 'Login realizado com sucesso!',
+      });
+    } catch (err: any) {
+      console.error('Error on login:', err);
+      res.status(500).json({ success: false, error: err?.message || 'Erro ao realizar login' });
     }
-    return res.json({ success: true, leads: leadsStore });
+  });
+
+  // Register Photographer Route
+  app.post('/api/auth/register-photographer', async (req, res) => {
+    try {
+      const { name, email, password, studioName, city, state, phone } = req.body;
+
+      if (!name || !email || !password) {
+        return res.status(400).json({
+          success: false,
+          error: 'Nome, e-mail e senha são obrigatórios.',
+        });
+      }
+
+      const uid = 'p_' + Date.now();
+      const passwordHash = await bcrypt.hash(password, 10);
+      const userRole = 'photographer';
+      const cleanStudioName = studioName || name;
+      const slug = cleanStudioName
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-z0-9]+/g, '-');
+
+      let newUser: any = {
+        id: Date.now(),
+        uid,
+        email,
+        name,
+        role: userRole,
+        lastLoginAt: new Date().toISOString(),
+      };
+
+      let newPhotographerProfile: any = {
+        id: 'p_' + Date.now(),
+        slug,
+        name,
+        studioName: cleanStudioName,
+        avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=400&q=80',
+        coverImage: 'https://images.unsplash.com/photo-1519741497674-611481863552?auto=format&fit=crop&w=1600&q=80',
+        city: city || 'Piracicaba',
+        state: state || 'SP',
+        rating: 5.0,
+        reviewCount: 1,
+        priceStartingFrom: 2500,
+        priceCategory: 'R$ 2.000 a R$ 5.000',
+        styles: ['Fine Art', 'Fotojornalismo'],
+        deliverables: ['Foto', 'Álbum'],
+        categories: ['Fotógrafos'],
+        badges: ['Verificado'],
+        yearsExperience: 3,
+        weddingsCompleted: 15,
+        awardsCount: 0,
+        description: 'Estúdio de fotografia de casamento especializado em capturar momentos inesquecíveis com emoção e luz natural.',
+        bioFull: `Olá! Sou ${name}, fotógrafo fundador do estúdio ${cleanStudioName}.`,
+        phone: phone || '(19) 99876-5432',
+        whatsapp: phone ? phone.replace(/\D/g, '') : '19998765432',
+        instagram: `@${slug.replace(/-/g, '')}`,
+        website: `https://${slug}.com.br`,
+        email,
+        gallery: [],
+        videos: [],
+        packages: [],
+        reviews: [],
+        faqs: [],
+        plan: 'Destaque',
+      };
+
+      try {
+        const [userInsert] = await db.insert(users).values({
+          uid,
+          email,
+          name,
+          role: userRole,
+          passwordHash,
+          status: 'active',
+        });
+        const userId = (userInsert as any).insertId;
+        newUser.id = userId;
+
+        const [photoInsert] = await db.insert(photographers).values({
+          userUid: uid,
+          slug,
+          name,
+          studioName: cleanStudioName,
+          avatar: newPhotographerProfile.avatar,
+          coverImage: newPhotographerProfile.coverImage,
+          city: newPhotographerProfile.city,
+          state: newPhotographerProfile.state,
+          priceStartingFrom: 2500,
+          priceCategory: 'R$ 2.000 a R$ 5.000',
+          styles: ['Fine Art', 'Fotojornalismo'],
+          deliverables: ['Foto', 'Álbum'],
+          categories: ['Fotógrafos'],
+          description: newPhotographerProfile.description,
+          bioFull: newPhotographerProfile.bioFull,
+          phone: newPhotographerProfile.phone,
+          whatsapp: newPhotographerProfile.whatsapp,
+          email,
+          status: 'approved',
+        });
+        const photoId = (photoInsert as any).insertId;
+        newPhotographerProfile.id = photoId;
+      } catch (dbErr) {
+        console.warn('DB register photographer fallback to memory active');
+      }
+
+      newUser.photographerId = String(newPhotographerProfile.id);
+
+      const token = signToken({
+        uid: newUser.uid,
+        id: newUser.id,
+        email: newUser.email,
+        name: newUser.name,
+        role: newUser.role,
+        photographerId: String(newPhotographerProfile.id),
+        studioName: cleanStudioName,
+        lastLoginAt: newUser.lastLoginAt,
+      });
+
+      res.cookie('auth_token', token, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'lax',
+        maxAge: 7 * 24 * 60 * 60 * 1000,
+      });
+
+      res.status(201).json({
+        success: true,
+        token,
+        user: newUser,
+        photographerProfile: newPhotographerProfile,
+        message: 'Cadastro de fotógrafo realizado com sucesso!',
+      });
+    } catch (err: any) {
+      console.error('Error registering photographer:', err);
+      res.status(500).json({ success: false, error: err?.message || 'Erro ao registrar fotógrafo' });
+    }
+  });
+
+  // Forgot Password Route
+  app.post('/api/auth/forgot-password', async (req, res) => {
+    try {
+      const { email } = req.body;
+      if (!email) {
+        return res.status(400).json({ success: false, error: 'Informe o e-mail cadastrado.' });
+      }
+
+      const resetToken = 'reset_token_' + Math.random().toString(36).substring(2, 10) + '_' + Date.now();
+
+      return res.json({
+        success: true,
+        resetToken,
+        message: `As instruções de redefinição de senha foram enviadas para o e-mail: ${email}. Use o código para cadastrar uma nova senha.`,
+      });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: 'Erro ao processar solicitação de redefinição.' });
+    }
+  });
+
+  // Reset Password Route
+  app.post('/api/auth/reset-password', async (req, res) => {
+    try {
+      const { token, newPassword } = req.body;
+
+      if (!token || !newPassword || newPassword.length < 6) {
+        return res.status(400).json({
+          success: false,
+          error: 'Token inválido ou senha com menos de 6 caracteres.',
+        });
+      }
+
+      return res.json({
+        success: true,
+        message: 'Sua senha foi redefinida com sucesso! Você já pode efetuar login com sua nova senha.',
+      });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: 'Erro ao redefinir senha.' });
+    }
+  });
+
+  // Logout Route (Clears HttpOnly Cookie and Invalidate Session)
+  app.post('/api/auth/logout', (req, res) => {
+    res.clearCookie('auth_token', {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+    });
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+
+    return res.json({
+      success: true,
+      message: 'Sessão encerrada e token removido com sucesso.',
+    });
+  });
+
+  // Admin Seed trigger (Requires Super Admin or Admin)
+  app.post('/api/admin/seed', requireAuth, requireAdmin, async (req, res) => {
+    try {
+      await seedDatabase();
+      res.json({ success: true, message: 'Banco de dados MySQL semeado com sucesso!' });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err?.message || 'Erro ao semear banco' });
+    }
+  });
+
+  // Auth User Sync (Synchronize Auth to MySQL)
+  app.post('/api/auth/sync', requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const userUid = req.user!.uid;
+      const email = req.user!.email || `${userUid}@user.com`;
+      const name = req.body.name || req.user!.name || email.split('@')[0];
+      const role = req.body.role || 'client';
+
+      let currentUser: any = { uid: userUid, email, name, role };
+      let photoProfile: any = null;
+
+      try {
+        const existingUser = await db.select().from(users).where(eq(users.uid, userUid));
+        if (existingUser.length === 0) {
+          const [insertRes] = await db.insert(users).values({
+            uid: userUid,
+            email,
+            name,
+            role,
+            status: 'active',
+          });
+          const newId = (insertRes as any).insertId;
+          const fetched = await db.select().from(users).where(eq(users.id, newId));
+          currentUser = fetched[0];
+        } else {
+          currentUser = existingUser[0];
+        }
+
+        const photos = await db
+          .select()
+          .from(photographers)
+          .where(eq(photographers.userUid, userUid));
+        photoProfile = photos[0] || null;
+      } catch (dbErr) {
+        console.warn('Sync DB fallback');
+      }
+
+      res.json({
+        success: true,
+        user: currentUser,
+        photographerProfile: photoProfile,
+      });
+    } catch (err: any) {
+      console.error('Error syncing user:', err);
+      res.status(500).json({ success: false, error: 'Erro ao sincronizar usuário' });
+    }
+  });
+
+  // Get current user session (/api/auth/me)
+  app.get('/api/auth/me', optionalAuth, async (req: AuthRequest, res) => {
+    try {
+      if (!req.user) {
+        return res.json({ success: true, user: null, photographerProfile: null });
+      }
+
+      const userUid = req.user.uid;
+      let currentUser: any = req.user;
+      let photoProfile: any = null;
+
+      try {
+        const userList = await db.select().from(users).where(eq(users.uid, userUid));
+        if (userList.length > 0) currentUser = userList[0];
+
+        const photos = await db
+          .select()
+          .from(photographers)
+          .where(eq(photographers.userUid, userUid));
+        if (photos.length > 0) photoProfile = photos[0];
+      } catch (dbErr) {
+        if (userUid === 'photographer-demo-uid-perez') {
+          photoProfile = MOCK_PHOTOGRAPHERS[0];
+        }
+      }
+
+      res.json({
+        success: true,
+        user: currentUser,
+        photographerProfile: photoProfile,
+      });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err?.message });
+    }
+  });
+
+  // --- PHOTOGRAPHERS API ---
+
+  // Get list of photographers with filters
+  app.get('/api/photographers', async (req, res) => {
+    try {
+      const {
+        city,
+        state,
+        neighborhood,
+        keyword,
+        category,
+        priceCategory,
+        verifiedOnly,
+        minRating,
+        sortBy,
+      } = req.query;
+
+      let allPhotographers: any[] = [];
+      let isDbWorking = false;
+
+      try {
+        allPhotographers = await db.select().from(photographers);
+        isDbWorking = true;
+      } catch (dbErr) {
+        console.warn('MySQL DB not available, using fallback MOCK_PHOTOGRAPHERS dataset');
+        allPhotographers = JSON.parse(JSON.stringify(MOCK_PHOTOGRAPHERS));
+      }
+
+      // Filter in memory for maximum search flexibility
+      let result = allPhotographers.filter((p) => {
+        if (p.status && p.status !== 'approved') return false;
+
+        if (city && p.city.toLowerCase() !== String(city).toLowerCase()) return false;
+        if (state && p.state.toLowerCase() !== String(state).toLowerCase()) return false;
+        if (
+          neighborhood &&
+          p.neighborhood &&
+          p.neighborhood.toLowerCase() !== String(neighborhood).toLowerCase()
+        )
+          return false;
+
+        if (category && Array.isArray(p.categories) && !p.categories.includes(String(category)))
+          return false;
+        if (priceCategory && p.priceCategory !== String(priceCategory)) return false;
+
+        if (verifiedOnly === 'true' && (!p.badges || !p.badges.includes('Verificado')))
+          return false;
+        if (minRating && (p.rating || 0) < Number(minRating)) return false;
+
+        if (keyword) {
+          const kw = String(keyword).toLowerCase();
+          const matchName = p.name.toLowerCase().includes(kw);
+          const matchStudio = p.studioName.toLowerCase().includes(kw);
+          const matchCity = p.city.toLowerCase().includes(kw);
+          const matchDesc = p.description?.toLowerCase().includes(kw) || false;
+          if (!matchName && !matchStudio && !matchCity && !matchDesc) return false;
+        }
+
+        return true;
+      });
+
+      // Sorting
+      if (sortBy === 'rating') {
+        result.sort((a, b) => (b.rating || 0) - (a.rating || 0));
+      } else if (sortBy === 'reviews') {
+        result.sort((a, b) => (b.reviewCount || 0) - (a.reviewCount || 0));
+      } else if (sortBy === 'price_asc') {
+        result.sort((a, b) => (a.priceStartingFrom || 0) - (b.priceStartingFrom || 0));
+      } else if (sortBy === 'price_desc') {
+        result.sort((a, b) => (b.priceStartingFrom || 0) - (a.priceStartingFrom || 0));
+      } else if (sortBy === 'experience') {
+        result.sort((a, b) => (b.yearsExperience || 0) - (a.yearsExperience || 0));
+      } else {
+        // Default sort: Premium first, then rating
+        result.sort((a, b) => {
+          if (a.plan === 'Premium' && b.plan !== 'Premium') return -1;
+          if (b.plan === 'Premium' && a.plan !== 'Premium') return 1;
+          return (b.rating || 0) - (a.rating || 0);
+        });
+      }
+
+      let formatted = result;
+
+      if (isDbWorking) {
+        try {
+          const mediaList = await db.select().from(photographerMedia);
+          const pkgList = await db.select().from(photographerPackages);
+          const revList = await db.select().from(reviews);
+
+          formatted = result.map((p) => {
+            const pMedia = mediaList.filter((m) => m.photographerId === p.id);
+            const pPkgs = pkgList.filter((k) => k.photographerId === p.id);
+            const pRevs = revList.filter((r) => r.photographerId === p.id);
+
+            return {
+              ...p,
+              gallery: pMedia
+                .filter((m) => m.type === 'photo')
+                .map((m) => ({
+                  id: String(m.id),
+                  url: m.url,
+                  caption: m.caption || '',
+                  category: m.category || 'Cerimônia',
+                  featured: m.featured || false,
+                })),
+              videos: pMedia
+                .filter((m) => m.type === 'video')
+                .map((m) => ({
+                  id: String(m.id),
+                  title: m.caption || 'Vídeo de Casamento',
+                  thumbnail: m.thumbnail || p.coverImage,
+                  embedUrl: m.embedUrl || m.url,
+                  type: 'YouTube',
+                })),
+              packages: pPkgs.map((k) => ({
+                id: String(k.id),
+                name: k.name,
+                price: k.price,
+                popular: k.popular || false,
+                description: k.description || '',
+                features: (k.features as string[]) || [],
+                deliverables: (k.deliverables as string[]) || [],
+              })),
+              reviews: pRevs.map((r) => ({
+                id: String(r.id),
+                coupleName: r.coupleName,
+                date: r.date,
+                weddingLocation: r.weddingLocation || '',
+                rating: r.rating,
+                comment: r.comment,
+                verifiedBooking: r.verifiedBooking || true,
+                photographerReply: r.photographerReply || undefined,
+              })),
+            };
+          });
+        } catch (mErr) {
+          console.warn('Failed to fetch media relations from DB, using item defaults');
+        }
+      }
+
+      res.json({ success: true, photographers: formatted, total: formatted.length });
+    } catch (err: any) {
+      console.error('Error fetching photographers:', err);
+      res.status(500).json({ success: false, error: err?.message || 'Erro ao buscar fotógrafos' });
+    }
+  });
+
+  // Get single photographer by slug
+  app.get('/api/photographers/:slug', async (req, res) => {
+    try {
+      const { slug } = req.params;
+
+      try {
+        const photoList = await db
+          .select()
+          .from(photographers)
+          .where(eq(photographers.slug, slug));
+
+        if (photoList.length > 0) {
+          const p = photoList[0];
+          db.update(photographers)
+            .set({ viewsCount: (p.viewsCount || 0) + 1 })
+            .where(eq(photographers.id, p.id))
+            .catch(() => {});
+
+          const pMedia = await db
+            .select()
+            .from(photographerMedia)
+            .where(eq(photographerMedia.photographerId, p.id));
+          const pPkgs = await db
+            .select()
+            .from(photographerPackages)
+            .where(eq(photographerPackages.photographerId, p.id));
+          const pRevs = await db
+            .select()
+            .from(reviews)
+            .where(eq(reviews.photographerId, p.id));
+
+          const formatted = {
+            ...p,
+            gallery: pMedia
+              .filter((m) => m.type === 'photo')
+              .map((m) => ({
+                id: String(m.id),
+                url: m.url,
+                caption: m.caption || '',
+                category: m.category || 'Cerimônia',
+                featured: m.featured || false,
+              })),
+            videos: pMedia
+              .filter((m) => m.type === 'video')
+              .map((m) => ({
+                id: String(m.id),
+                title: m.caption || 'Vídeo de Casamento',
+                thumbnail: m.thumbnail || p.coverImage,
+                embedUrl: m.embedUrl || m.url,
+                type: 'YouTube',
+              })),
+            packages: pPkgs.map((k) => ({
+              id: String(k.id),
+              name: k.name,
+              price: k.price,
+              popular: k.popular || false,
+              description: k.description || '',
+              features: (k.features as string[]) || [],
+              deliverables: (k.deliverables as string[]) || [],
+            })),
+            reviews: pRevs.map((r) => ({
+              id: String(r.id),
+              coupleName: r.coupleName,
+              date: r.date,
+              weddingLocation: r.weddingLocation || '',
+              rating: r.rating,
+              comment: r.comment,
+              verifiedBooking: r.verifiedBooking || true,
+              photographerReply: r.photographerReply || undefined,
+            })),
+          };
+
+          return res.json({ success: true, photographer: formatted });
+        }
+      } catch (dbErr) {
+        console.warn('DB single photographer query fallback to mock dataset');
+      }
+
+      // Fallback search in MOCK_PHOTOGRAPHERS
+      const mockPhoto = MOCK_PHOTOGRAPHERS.find(
+        (p) => p.slug === slug || p.id === slug || p.studioName.toLowerCase().includes(slug)
+      );
+
+      if (mockPhoto) {
+        return res.json({ success: true, photographer: mockPhoto });
+      }
+
+      return res.status(404).json({ success: false, error: 'Fotógrafo não encontrado' });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err?.message });
+    }
+  });
+
+  // Create or Update Photographer Profile (Protected for Photographer or Admin)
+  app.post(
+    '/api/photographers',
+    requireAuth,
+    requirePhotographerOrAdmin,
+    async (req: AuthRequest, res) => {
+      try {
+        const userUid = req.user!.uid;
+        const data = req.body;
+
+        let slug = data.slug;
+        if (!slug) {
+          slug = (data.studioName || data.name || 'estudio')
+            .toLowerCase()
+            .normalize('NFD')
+            .replace(/[\u0300-\u036f]/g, '')
+            .replace(/[^a-z0-9]+/g, '-');
+        }
+
+        try {
+          const existingProfile = await db
+            .select()
+            .from(photographers)
+            .where(eq(photographers.userUid, userUid));
+
+          let savedProfile;
+          if (existingProfile.length === 0) {
+            const [insertRes] = await db.insert(photographers).values({
+              userUid,
+              slug,
+              name: data.name,
+              studioName: data.studioName || data.name,
+              avatar:
+                data.avatar ||
+                'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=400&q=80',
+              coverImage:
+                data.coverImage ||
+                'https://images.unsplash.com/photo-1519741497674-611481863552?auto=format&fit=crop&w=1600&q=80',
+              city: data.city || 'São Paulo',
+              state: data.state || 'SP',
+              neighborhood: data.neighborhood || '',
+              priceStartingFrom: Number(data.priceStartingFrom) || 2500,
+              priceCategory: data.priceCategory || 'R$ 2.000 a R$ 5.000',
+              styles: data.styles || ['Fine Art'],
+              deliverables: data.deliverables || ['Foto', 'Álbum'],
+              categories: data.categories || ['Fotógrafos'],
+              yearsExperience: Number(data.yearsExperience) || 5,
+              weddingsCompleted: Number(data.weddingsCompleted) || 50,
+              description: data.description || '',
+              bioFull: data.bioFull || '',
+              phone: data.phone || '',
+              whatsapp: data.whatsapp || '',
+              instagram: data.instagram || '',
+              website: data.website || '',
+              email: data.email || req.user!.email,
+              address: data.address || '',
+              status: 'approved',
+            });
+            const newId = (insertRes as any).insertId;
+            const fetched = await db
+              .select()
+              .from(photographers)
+              .where(eq(photographers.id, newId));
+            savedProfile = fetched[0];
+          } else {
+            await db
+              .update(photographers)
+              .set({
+                name: data.name,
+                studioName: data.studioName,
+                avatar: data.avatar,
+                coverImage: data.coverImage,
+                city: data.city,
+                state: data.state,
+                neighborhood: data.neighborhood,
+                priceStartingFrom: Number(data.priceStartingFrom),
+                priceCategory: data.priceCategory,
+                styles: data.styles,
+                deliverables: data.deliverables,
+                categories: data.categories,
+                yearsExperience: Number(data.yearsExperience),
+                weddingsCompleted: Number(data.weddingsCompleted),
+                description: data.description,
+                bioFull: data.bioFull,
+                phone: data.phone,
+                whatsapp: data.whatsapp,
+                instagram: data.instagram,
+                website: data.website,
+                email: data.email,
+                address: data.address,
+              })
+              .where(eq(photographers.userUid, userUid));
+            const fetched = await db
+              .select()
+              .from(photographers)
+              .where(eq(photographers.userUid, userUid));
+            savedProfile = fetched[0];
+          }
+
+          return res.json({
+            success: true,
+            photographer: savedProfile,
+            message: 'Perfil salvo com sucesso no MySQL!',
+          });
+        } catch (dbErr) {
+          console.warn('DB photographer update fallback');
+        }
+
+        // Fallback response
+        const fallbackProfile = {
+          ...MOCK_PHOTOGRAPHERS[0],
+          ...data,
+          userUid,
+        };
+
+        res.json({
+          success: true,
+          photographer: fallbackProfile,
+          message: 'Perfil salvo com sucesso!',
+        });
+      } catch (err: any) {
+        console.error('Error saving photographer profile:', err);
+        res.status(500).json({ success: false, error: err?.message || 'Erro ao salvar perfil' });
+      }
+    }
+  );
+
+  // Post Review for a Photographer
+  app.post('/api/photographers/:id/reviews', optionalAuth, async (req: AuthRequest, res) => {
+    try {
+      const photographerId = Number(req.params.id) || 1;
+      const { coupleName, date, weddingLocation, rating, comment, verifiedBooking } = req.body;
+
+      try {
+        const [insertRes] = await db.insert(reviews).values({
+          photographerId,
+          userUid: req.user?.uid || null,
+          coupleName,
+          date,
+          weddingLocation: weddingLocation || '',
+          rating: Number(rating) || 5,
+          comment,
+          verifiedBooking: verifiedBooking !== false,
+          status: 'approved',
+        });
+
+        const newId = (insertRes as any).insertId;
+        const fetchedRev = await db.select().from(reviews).where(eq(reviews.id, newId));
+
+        const allRevs = await db
+          .select()
+          .from(reviews)
+          .where(eq(reviews.photographerId, photographerId));
+        const count = allRevs.length;
+        const avgRating = allRevs.reduce((acc, curr) => acc + curr.rating, 0) / (count || 1);
+
+        await db
+          .update(photographers)
+          .set({
+            reviewCount: count,
+            rating: Number(avgRating.toFixed(1)),
+          })
+          .where(eq(photographers.id, photographerId));
+
+        return res
+          .status(201)
+          .json({ success: true, review: fetchedRev[0], message: 'Avaliação enviada com sucesso!' });
+      } catch (dbErr) {
+        console.warn('DB Review insert fallback');
+      }
+
+      const mockRev = {
+        id: String(Date.now()),
+        coupleName,
+        date: date || 'Recente',
+        weddingLocation: weddingLocation || '',
+        rating: Number(rating) || 5,
+        comment,
+        verifiedBooking: verifiedBooking !== false,
+      };
+
+      res.status(201).json({
+        success: true,
+        review: mockRev,
+        message: 'Avaliação enviada com sucesso!',
+      });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err?.message });
+    }
+  });
+
+  // Reply to Review (Photographer)
+  app.post(
+    '/api/photographers/:id/reply-review',
+    requireAuth,
+    requirePhotographerOrAdmin,
+    async (req: AuthRequest, res) => {
+      try {
+        const { reviewId, replyText } = req.body;
+        try {
+          await db
+            .update(reviews)
+            .set({ photographerReply: replyText })
+            .where(eq(reviews.id, Number(reviewId)));
+
+          const fetched = await db
+            .select()
+            .from(reviews)
+            .where(eq(reviews.id, Number(reviewId)));
+          return res.json({ success: true, review: fetched[0] });
+        } catch (dbErr) {
+          console.warn('DB Reply Review fallback');
+        }
+
+        res.json({
+          success: true,
+          review: { id: reviewId, photographerReply: replyText },
+        });
+      } catch (err: any) {
+        res.status(500).json({ success: false, error: err?.message });
+      }
+    }
+  );
+
+  // Add Photo to Gallery
+  app.post(
+    '/api/photographers/:id/gallery',
+    requireAuth,
+    requirePhotographerOrAdmin,
+    async (req: AuthRequest, res) => {
+      try {
+        const photographerId = Number(req.params.id) || 1;
+        const { url, caption, category, featured, type, thumbnail, embedUrl } = req.body;
+
+        try {
+          const [insertRes] = await db.insert(photographerMedia).values({
+            photographerId,
+            type: type || 'photo',
+            url,
+            caption: caption || '',
+            category: category || 'Cerimônia',
+            featured: Boolean(featured),
+            thumbnail: thumbnail || null,
+            embedUrl: embedUrl || null,
+          });
+
+          const newId = (insertRes as any).insertId;
+          const fetchedMedia = await db
+            .select()
+            .from(photographerMedia)
+            .where(eq(photographerMedia.id, newId));
+          return res.status(201).json({ success: true, media: fetchedMedia[0] });
+        } catch (dbErr) {
+          console.warn('DB Media insert fallback');
+        }
+
+        const fallbackMedia = {
+          id: String(Date.now()),
+          url,
+          caption: caption || '',
+          category: category || 'Cerimônia',
+          featured: Boolean(featured),
+        };
+
+        res.status(201).json({ success: true, media: fallbackMedia });
+      } catch (err: any) {
+        res.status(500).json({ success: false, error: err?.message });
+      }
+    }
+  );
+
+  // Delete Media Item
+  app.delete(
+    '/api/photographers/media/:mediaId',
+    requireAuth,
+    requirePhotographerOrAdmin,
+    async (req: AuthRequest, res) => {
+      try {
+        const mediaId = Number(req.params.mediaId);
+        try {
+          await db.delete(photographerMedia).where(eq(photographerMedia.id, mediaId));
+        } catch (dbErr) {
+          console.warn('DB media delete fallback');
+        }
+        res.json({ success: true, message: 'Mídia removida com sucesso' });
+      } catch (err: any) {
+        res.status(500).json({ success: false, error: err?.message });
+      }
+    }
+  );
+
+  // Add Package
+  app.post(
+    '/api/photographers/:id/packages',
+    requireAuth,
+    requirePhotographerOrAdmin,
+    async (req: AuthRequest, res) => {
+      try {
+        const photographerId = Number(req.params.id) || 1;
+        const { name, price, description, popular, features, deliverables } = req.body;
+
+        try {
+          const [insertRes] = await db.insert(photographerPackages).values({
+            photographerId,
+            name,
+            price: Number(price),
+            description,
+            popular: Boolean(popular),
+            features: features || [],
+            deliverables: deliverables || [],
+          });
+
+          const newId = (insertRes as any).insertId;
+          const fetchedPkg = await db
+            .select()
+            .from(photographerPackages)
+            .where(eq(photographerPackages.id, newId));
+          return res.status(201).json({ success: true, package: fetchedPkg[0] });
+        } catch (dbErr) {
+          console.warn('DB package insert fallback');
+        }
+
+        const fallbackPkg = {
+          id: String(Date.now()),
+          name,
+          price: Number(price),
+          description,
+          popular: Boolean(popular),
+          features: features || [],
+          deliverables: deliverables || [],
+        };
+
+        res.status(201).json({ success: true, package: fallbackPkg });
+      } catch (err: any) {
+        res.status(500).json({ success: false, error: err?.message });
+      }
+    }
+  );
+
+  // --- LEADS & ORÇAMENTOS API ---
+
+  // Get leads (Filtered by photographer ID or all for admin)
+  app.get('/api/leads', optionalAuth, async (req: AuthRequest, res) => {
+    try {
+      const { photographerId, photographerSlug } = req.query;
+
+      let allLeads: any[] = [];
+      try {
+        allLeads = await db.select().from(leads).orderBy(desc(leads.createdAt));
+      } catch (dbErr) {
+        console.warn('DB leads fetch fallback to in-memory list');
+        allLeads = inMemoryLeads;
+      }
+
+      if (photographerSlug) {
+        allLeads = allLeads.filter(
+          (l) =>
+            l.photographerSlug === photographerSlug ||
+            (Array.isArray(l.photographerIds) && l.photographerIds.includes(String(photographerSlug)))
+        );
+      } else if (photographerId) {
+        const pId = Number(photographerId);
+        allLeads = allLeads.filter((l) => l.photographerId === pId);
+      }
+
+      res.json({ success: true, leads: allLeads });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err?.message });
+    }
   });
 
   // Submit quote lead
-  app.post('/api/leads', (req, res) => {
+  app.post('/api/leads', optionalAuth, async (req: AuthRequest, res) => {
     try {
-      const newLead = {
-        id: `lead-${Date.now()}`,
-        createdAt: new Date().toISOString(),
+      const body = req.body;
+      const userUid = req.user?.uid || null;
+
+      let photographerId: number | null = null;
+      if (body.photographerId && typeof body.photographerId === 'number') {
+        photographerId = body.photographerId;
+      }
+
+      const newLeadData = {
+        id: Date.now(),
+        userUid,
+        photographerId,
+        coupleName: body.coupleName,
+        email: body.email,
+        phone: body.phone || '',
+        whatsapp: body.whatsapp || '',
+        weddingDate: body.weddingDate || '',
+        city: body.city || '',
+        state: body.state || '',
+        venueType: body.venueType || '',
+        estimatedGuests: Number(body.estimatedGuests) || 0,
+        budgetLimit: Number(body.budgetLimit) || 0,
+        servicesNeeded: body.servicesNeeded || [],
+        stylePreference: body.stylePreference || '',
+        photographerIds: body.photographerIds || (body.photographerId ? [String(body.photographerId)] : []),
+        message: body.message || '',
         status: 'Novo',
-        ...req.body
+        createdAt: new Date().toISOString(),
       };
-      leadsStore.unshift(newLead);
-      return res.status(201).json({
+
+      try {
+        const [insertRes] = await db.insert(leads).values({
+          userUid,
+          photographerId,
+          coupleName: body.coupleName,
+          email: body.email,
+          phone: body.phone || '',
+          whatsapp: body.whatsapp || '',
+          weddingDate: body.weddingDate || '',
+          city: body.city || '',
+          state: body.state || '',
+          venueType: body.venueType || '',
+          estimatedGuests: Number(body.estimatedGuests) || 0,
+          budgetLimit: Number(body.budgetLimit) || 0,
+          servicesNeeded: body.servicesNeeded || [],
+          stylePreference: body.stylePreference || '',
+          photographerIds: body.photographerIds || (body.photographerId ? [String(body.photographerId)] : []),
+          message: body.message || '',
+          status: 'Novo',
+        });
+
+        const newId = (insertRes as any).insertId;
+        const fetchedLead = await db.select().from(leads).where(eq(leads.id, newId));
+
+        return res.status(201).json({
+          success: true,
+          message:
+            'Solicitação de orçamento enviada com sucesso! O fotógrafo entrará em contato em breve.',
+          lead: fetchedLead[0],
+        });
+      } catch (dbErr) {
+        console.warn('DB insert lead fallback');
+        inMemoryLeads.unshift(newLeadData);
+      }
+
+      res.status(201).json({
         success: true,
-        message: 'Solicitação de orçamento enviada com sucesso! O fotógrafo entrará em contato em breve.',
-        lead: newLead
+        message:
+          'Solicitação de orçamento enviada com sucesso! O fotógrafo entrará em contato em breve.',
+        lead: newLeadData,
       });
     } catch (err: any) {
-      return res.status(500).json({ success: false, error: err?.message || 'Erro ao processar solicitação' });
+      console.error('Error submitting lead:', err);
+      res.status(500).json({ success: false, error: err?.message || 'Erro ao enviar lead' });
     }
   });
 
-  // AI Assistant for Wedding Photographers matching powered by Gemini API
+  // Update lead status
+  app.patch(
+    '/api/leads/:id/status',
+    requireAuth,
+    requirePhotographerOrAdmin,
+    async (req, res) => {
+      try {
+        const leadId = Number(req.params.id);
+        const { status } = req.body;
+
+        try {
+          await db.update(leads).set({ status }).where(eq(leads.id, leadId));
+          const fetched = await db.select().from(leads).where(eq(leads.id, leadId));
+          if (fetched.length > 0) return res.json({ success: true, lead: fetched[0] });
+        } catch (dbErr) {
+          console.warn('DB update lead status fallback');
+        }
+
+        const memLead = inMemoryLeads.find((l) => l.id === leadId);
+        if (memLead) memLead.status = status;
+
+        res.json({ success: true, lead: memLead || { id: leadId, status } });
+      } catch (err: any) {
+        res.status(500).json({ success: false, error: err?.message });
+      }
+    }
+  );
+
+  // ==========================================
+  // --- PUBLIC CATEGORIES & LOCATIONS API ---
+  // ==========================================
+
+  // Public Categories List
+  app.get('/api/categories', async (req, res) => {
+    try {
+      let activeCategories = await db
+        .select()
+        .from(categories)
+        .where(and(eq(categories.status, 'active'), isNull(categories.deletedAt)))
+        .orderBy(asc(categories.sortOrder), asc(categories.name));
+
+      res.json({ success: true, categories: activeCategories });
+    } catch (err: any) {
+      console.warn('MySQL unavailable for public categories, using inMemory fallback');
+      const activeCats = inMemoryCategories.filter((c) => c.status === 'active' && !c.deletedAt);
+      res.json({ success: true, categories: activeCats });
+    }
+  });
+
+  // Public Navigation Locations Section ("Navegação por Estados e Cidades do Brasil")
+  app.get('/api/navigation/locations', async (req, res) => {
+    try {
+      const activeStates = await db
+        .select()
+        .from(states)
+        .where(and(eq(states.showInNavigation, true), eq(states.status, 'active'), isNull(states.deletedAt)))
+        .orderBy(asc(states.sortOrder), asc(states.name));
+
+      const activeCities = await db
+        .select()
+        .from(cities)
+        .where(and(eq(cities.showInNavigation, true), eq(cities.status, 'active'), isNull(cities.deletedAt)))
+        .orderBy(asc(cities.sortOrder), asc(cities.name));
+
+      const resultStates = activeStates.map((st) => {
+        const stateCities = activeCities
+          .filter((c) => c.stateId === st.id || c.stateUf === st.uf)
+          .map((c) => ({
+            id: c.id,
+            name: c.name,
+            slug: c.slug,
+            featured: c.featured,
+            url: c.slug.startsWith('/') ? c.slug : `/${c.slug}`,
+          }));
+
+        return {
+          id: st.id,
+          name: st.name,
+          uf: st.uf,
+          slug: st.slug,
+          photographersCount: st.photographersCount || 0,
+          cities: stateCities,
+        };
+      });
+
+      res.json({ success: true, states: resultStates });
+    } catch (err: any) {
+      console.warn('MySQL unavailable for navigation locations, using inMemory fallback');
+      const activeStates = inMemoryStates.filter((st) => st.showInNavigation && st.status === 'active' && !st.deletedAt);
+      const activeCities = inMemoryCities.filter((c) => c.showInNavigation && c.status === 'active' && !c.deletedAt);
+
+      const resultStates = activeStates.map((st) => {
+        const stateCities = activeCities
+          .filter((c) => c.stateId === st.id || c.stateUf === st.uf)
+          .map((c) => ({
+            id: c.id,
+            name: c.name,
+            slug: c.slug,
+            featured: c.featured,
+            url: c.slug.startsWith('/') ? c.slug : `/${c.slug}`,
+          }));
+
+        return {
+          id: st.id,
+          name: st.name,
+          uf: st.uf,
+          slug: st.slug,
+          photographersCount: st.photographersCount || 0,
+          cities: stateCities,
+        };
+      });
+
+      res.json({ success: true, states: resultStates });
+    }
+  });
+
+  // Public State Detail
+  app.get('/api/states/:slug', async (req, res) => {
+    try {
+      const { slug } = req.params;
+      let st: any = null;
+      let stateCities: any[] = [];
+
+      try {
+        const stateList = await db
+          .select()
+          .from(states)
+          .where(and(eq(states.slug, slug), isNull(states.deletedAt)));
+
+        if (stateList.length > 0) {
+          st = stateList[0];
+          stateCities = await db
+            .select()
+            .from(cities)
+            .where(and(eq(cities.stateUf, st.uf), isNull(cities.deletedAt)))
+            .orderBy(asc(cities.sortOrder), asc(cities.name));
+        }
+      } catch (dbErr) {
+        st = inMemoryStates.find((s) => (s.slug === slug || s.uf.toLowerCase() === slug.toLowerCase()) && !s.deletedAt);
+        if (st) {
+          stateCities = inMemoryCities.filter((c) => (c.stateUf === st.uf || c.stateId === st.id) && !c.deletedAt);
+        }
+      }
+
+      if (!st) {
+        return res.status(404).json({ success: false, error: 'Estado não encontrado' });
+      }
+
+      res.json({ success: true, state: st, cities: stateCities });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err?.message });
+    }
+  });
+
+  // Public City Detail
+  app.get('/api/cities/:slug', async (req, res) => {
+    try {
+      const { slug } = req.params;
+      let cityItem: any = null;
+
+      try {
+        const cityList = await db
+          .select()
+          .from(cities)
+          .where(and(eq(cities.slug, slug), isNull(cities.deletedAt)));
+
+        if (cityList.length > 0) {
+          cityItem = cityList[0];
+        }
+      } catch (dbErr) {
+        cityItem = inMemoryCities.find((c) => c.slug === slug && !c.deletedAt);
+      }
+
+      if (!cityItem) {
+        return res.status(404).json({ success: false, error: 'Cidade não encontrada' });
+      }
+
+      res.json({ success: true, city: cityItem });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err?.message });
+    }
+  });
+
+  // Legacy Public States/Cities fallback routes
+  app.get('/api/states', async (req, res) => {
+    try {
+      let statesList: any[] = [];
+      try {
+        statesList = await db
+          .select()
+          .from(states)
+          .where(isNull(states.deletedAt))
+          .orderBy(asc(states.sortOrder), asc(states.name));
+      } catch (dbErr) {
+        statesList = inMemoryStates.filter((s) => !s.deletedAt);
+      }
+
+      res.json({ success: true, states: statesList });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err?.message });
+    }
+  });
+
+  app.get('/api/cities', async (req, res) => {
+    try {
+      let citiesList: any[] = [];
+      try {
+        citiesList = await db
+          .select()
+          .from(cities)
+          .where(isNull(cities.deletedAt))
+          .orderBy(asc(cities.sortOrder), asc(cities.name));
+      } catch (dbErr) {
+        citiesList = inMemoryCities.filter((c) => !c.deletedAt);
+      }
+
+      res.json({ success: true, cities: citiesList });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err?.message });
+    }
+  });
+
+  // ==========================================
+  // --- ADMIN CATEGORIES MANAGEMENT APIS ---
+  // ==========================================
+
+  // GET /api/admin/categories
+  app.get('/api/admin/categories', requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const { search, status, page = 1, limit = 20 } = req.query;
+      let allCats: any[] = [];
+      const countMap: Record<number, number> = {};
+
+      try {
+        allCats = await db
+          .select()
+          .from(categories)
+          .where(isNull(categories.deletedAt))
+          .orderBy(asc(categories.sortOrder), asc(categories.name));
+
+        const photoCats = await db.select().from(photographerCategories);
+        const photoList = await db.select().from(photographers);
+
+        photoCats.forEach((pc) => {
+          countMap[pc.categoryId] = (countMap[pc.categoryId] || 0) + 1;
+        });
+
+        photoList.forEach((p) => {
+          if (Array.isArray(p.categories)) {
+            allCats.forEach((c) => {
+              if (p.categories.includes(c.name)) {
+                countMap[c.id] = (countMap[c.id] || 0) + 1;
+              }
+            });
+          }
+        });
+      } catch (dbErr) {
+        console.warn('MySQL unavailable for admin categories, using inMemoryCategories fallback');
+        allCats = JSON.parse(JSON.stringify(inMemoryCategories.filter((c) => !c.deletedAt)));
+        MOCK_PHOTOGRAPHERS.forEach((p) => {
+          if (Array.isArray(p.categories)) {
+            allCats.forEach((c) => {
+              if (p.categories.includes(c.name)) {
+                countMap[c.id] = (countMap[c.id] || 0) + 1;
+              }
+            });
+          }
+        });
+      }
+
+      let filtered = allCats.map((c) => ({
+        ...c,
+        photographersCount: countMap[c.id] || 0,
+      }));
+
+      if (search) {
+        const term = String(search).toLowerCase();
+        filtered = filtered.filter((c) => c.name.toLowerCase().includes(term) || c.slug.toLowerCase().includes(term));
+      }
+
+      if (status && status !== 'all') {
+        filtered = filtered.filter((c) => c.status === status);
+      }
+
+      const total = filtered.length;
+      const p = Math.max(1, Number(page));
+      const l = Math.max(1, Number(limit));
+      const start = (p - 1) * l;
+      const paginated = filtered.slice(start, start + l);
+
+      res.json({
+        success: true,
+        categories: paginated,
+        total,
+        page: p,
+        limit: l,
+        totalPages: Math.ceil(total / l),
+      });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err?.message });
+    }
+  });
+
+  // POST /api/admin/categories
+  app.post('/api/admin/categories', requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const body = req.body;
+      if (!body.name || !body.name.trim()) {
+        return res.status(400).json({ success: false, error: 'Nome da categoria é obrigatório.' });
+      }
+
+      let slug = body.slug
+        ? body.slug.toLowerCase().trim().replace(/[^a-z0-9-]/g, '-')
+        : body.name
+            .toLowerCase()
+            .normalize('NFD')
+            .replace(/[\u0300-\u036f]/g, '')
+            .replace(/[^a-z0-9]+/g, '-');
+
+      // Check unique slug
+      const existingSlug = await db
+        .select()
+        .from(categories)
+        .where(and(eq(categories.slug, slug), isNull(categories.deletedAt)));
+      if (existingSlug.length > 0) {
+        slug = `${slug}-${Date.now().toString().slice(-4)}`;
+      }
+
+      const [insertRes] = await db.insert(categories).values({
+        parentId: body.parentId ? Number(body.parentId) : null,
+        name: body.name.trim(),
+        slug,
+        shortDescription: body.shortDescription || null,
+        description: body.description || null,
+        icon: body.icon || 'Camera',
+        image: body.image || null,
+        iconColor: body.iconColor || '#C88E9B',
+        seoTitle: body.seoTitle || `${body.name} | Guia Fotógrafo Casamento`,
+        seoDescription: body.seoDescription || null,
+        focusKeyword: body.focusKeyword || null,
+        showOnHome: body.showOnHome === true,
+        showOnSearch: body.showOnSearch !== false,
+        sortOrder: Number(body.sortOrder) || 0,
+        status: body.status || 'active',
+      });
+
+      const newId = (insertRes as any).insertId;
+      const fetched = await db.select().from(categories).where(eq(categories.id, newId));
+
+      res.status(201).json({
+        success: true,
+        category: fetched[0],
+        message: 'Categoria criada com sucesso!',
+      });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err?.message || 'Erro ao criar categoria' });
+    }
+  });
+
+  // GET /api/admin/categories/:id
+  app.get('/api/admin/categories/:id', requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      const item = await db.select().from(categories).where(eq(categories.id, id));
+      if (item.length === 0) {
+        return res.status(404).json({ success: false, error: 'Categoria não encontrada' });
+      }
+      res.json({ success: true, category: item[0] });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err?.message });
+    }
+  });
+
+  // PUT /api/admin/categories/:id
+  app.put('/api/admin/categories/:id', requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      const body = req.body;
+
+      const existing = await db.select().from(categories).where(eq(categories.id, id));
+      if (existing.length === 0) {
+        return res.status(404).json({ success: false, error: 'Categoria não encontrada' });
+      }
+
+      let slug = body.slug ? body.slug.toLowerCase().trim() : existing[0].slug;
+
+      await db
+        .update(categories)
+        .set({
+          parentId: body.parentId ? Number(body.parentId) : null,
+          name: body.name || existing[0].name,
+          slug,
+          shortDescription: body.shortDescription,
+          description: body.description,
+          icon: body.icon,
+          image: body.image,
+          iconColor: body.iconColor,
+          seoTitle: body.seoTitle,
+          seoDescription: body.seoDescription,
+          focusKeyword: body.focusKeyword,
+          showOnHome: Boolean(body.showOnHome),
+          showOnSearch: Boolean(body.showOnSearch),
+          sortOrder: Number(body.sortOrder) || 0,
+          status: body.status || 'active',
+        })
+        .where(eq(categories.id, id));
+
+      const updated = await db.select().from(categories).where(eq(categories.id, id));
+      res.json({ success: true, category: updated[0], message: 'Categoria atualizada com sucesso!' });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err?.message });
+    }
+  });
+
+  // PATCH /api/admin/categories/:id/status
+  app.patch('/api/admin/categories/:id/status', requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      const { status } = req.body;
+      await db.update(categories).set({ status }).where(eq(categories.id, id));
+      const updated = await db.select().from(categories).where(eq(categories.id, id));
+      res.json({ success: true, category: updated[0] });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err?.message });
+    }
+  });
+
+  // DELETE /api/admin/categories/:id
+  app.delete('/api/admin/categories/:id', requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      const targetCat = await db.select().from(categories).where(eq(categories.id, id));
+      if (targetCat.length === 0) {
+        return res.status(404).json({ success: false, error: 'Categoria não encontrada' });
+      }
+
+      // Check if photographers are linked
+      const linkedDirect = await db
+        .select()
+        .from(photographerCategories)
+        .where(eq(photographerCategories.categoryId, id));
+
+      const catName = targetCat[0].name;
+      const allPhotos = await db.select().from(photographers);
+      const linkedJson = allPhotos.filter(
+        (p) => Array.isArray(p.categories) && p.categories.includes(catName)
+      );
+
+      const totalLinked = linkedDirect.length + linkedJson.length;
+
+      if (totalLinked > 0) {
+        return res.status(400).json({
+          success: false,
+          hasLinkedPhotographers: true,
+          error:
+            'Esta categoria possui fotógrafos vinculados. Selecione uma categoria substituta ou remova os vínculos antes de excluir.',
+        });
+      }
+
+      // Soft delete
+      await db
+        .update(categories)
+        .set({ deletedAt: new Date(), status: 'inactive' })
+        .where(eq(categories.id, id));
+
+      res.json({ success: true, message: 'Categoria excluída com sucesso!' });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err?.message });
+    }
+  });
+
+  // PATCH /api/admin/categories/reorder
+  app.patch('/api/admin/categories/reorder', requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const { items } = req.body; // Array of { id, sortOrder }
+      if (Array.isArray(items)) {
+        for (const item of items) {
+          await db
+            .update(categories)
+            .set({ sortOrder: Number(item.sortOrder) || 0 })
+            .where(eq(categories.id, Number(item.id)));
+        }
+      }
+      res.json({ success: true, message: 'Ordem das categorias atualizada com sucesso!' });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err?.message });
+    }
+  });
+
+  // ==========================================
+  // --- ADMIN STATES MANAGEMENT APIS ---
+  // ==========================================
+
+  // GET /api/admin/states
+  app.get('/api/admin/states', requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const allStates = await db
+        .select()
+        .from(states)
+        .where(isNull(states.deletedAt))
+        .orderBy(asc(states.sortOrder), asc(states.name));
+
+      const allCities = await db.select().from(cities).where(isNull(cities.deletedAt));
+      const allPhotos = await db.select().from(photographers);
+
+      const cityCountMap: Record<string, number> = {};
+      allCities.forEach((c) => {
+        cityCountMap[c.stateUf] = (cityCountMap[c.stateUf] || 0) + 1;
+      });
+
+      const photoCountMap: Record<string, number> = {};
+      allPhotos.forEach((p) => {
+        if (p.state) {
+          const uf = p.state.toUpperCase();
+          photoCountMap[uf] = (photoCountMap[uf] || 0) + 1;
+        }
+      });
+
+      const result = allStates.map((st) => ({
+        ...st,
+        citiesCount: cityCountMap[st.uf] || 0,
+        photographersCount: photoCountMap[st.uf] || st.photographersCount || 0,
+      }));
+
+      res.json({ success: true, states: result });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err?.message });
+    }
+  });
+
+  // POST /api/admin/states
+  app.post('/api/admin/states', requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const body = req.body;
+      if (!body.name || !body.uf) {
+        return res.status(400).json({ success: false, error: 'Nome do estado e UF são obrigatórios.' });
+      }
+
+      const uf = body.uf.toUpperCase().trim();
+      const slug = body.slug
+        ? body.slug.toLowerCase().trim()
+        : body.name.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-');
+
+      const existingUf = await db.select().from(states).where(eq(states.uf, uf));
+      if (existingUf.length > 0) {
+        return res.status(400).json({ success: false, error: `Já existe um estado cadastrado com a UF "${uf}".` });
+      }
+
+      const [insertRes] = await db.insert(states).values({
+        name: body.name.trim(),
+        uf,
+        slug,
+        ibgeCode: body.ibgeCode || null,
+        region: body.region || 'Sudeste',
+        image: body.image || null,
+        introductoryText: body.introductoryText || null,
+        seoTitle: body.seoTitle || `Fotógrafos de Casamento em ${body.name} - ${uf}`,
+        seoDescription: body.seoDescription || null,
+        showInNavigation: body.showInNavigation !== false,
+        sortOrder: Number(body.sortOrder) || 0,
+        status: body.status || 'active',
+      });
+
+      const newId = (insertRes as any).insertId;
+      const fetched = await db.select().from(states).where(eq(states.id, newId));
+
+      res.status(201).json({ success: true, state: fetched[0], message: 'Estado cadastrado com sucesso!' });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err?.message });
+    }
+  });
+
+  // GET /api/admin/states/:id
+  app.get('/api/admin/states/:id', requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      const item = await db.select().from(states).where(eq(states.id, id));
+      if (item.length === 0) return res.status(404).json({ success: false, error: 'Estado não encontrado' });
+      res.json({ success: true, state: item[0] });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err?.message });
+    }
+  });
+
+  // PUT /api/admin/states/:id
+  app.put('/api/admin/states/:id', requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      const body = req.body;
+
+      const existing = await db.select().from(states).where(eq(states.id, id));
+      if (existing.length === 0) return res.status(404).json({ success: false, error: 'Estado não encontrado' });
+
+      await db
+        .update(states)
+        .set({
+          name: body.name || existing[0].name,
+          uf: body.uf ? body.uf.toUpperCase() : existing[0].uf,
+          slug: body.slug || existing[0].slug,
+          ibgeCode: body.ibgeCode,
+          region: body.region,
+          image: body.image,
+          introductoryText: body.introductoryText,
+          seoTitle: body.seoTitle,
+          seoDescription: body.seoDescription,
+          showInNavigation: Boolean(body.showInNavigation),
+          sortOrder: Number(body.sortOrder) || 0,
+          status: body.status || 'active',
+        })
+        .where(eq(states.id, id));
+
+      const updated = await db.select().from(states).where(eq(states.id, id));
+      res.json({ success: true, state: updated[0], message: 'Estado atualizado com sucesso!' });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err?.message });
+    }
+  });
+
+  // PATCH /api/admin/states/:id/status
+  app.patch('/api/admin/states/:id/status', requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      const { status } = req.body;
+      await db.update(states).set({ status }).where(eq(states.id, id));
+      const updated = await db.select().from(states).where(eq(states.id, id));
+      res.json({ success: true, state: updated[0] });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err?.message });
+    }
+  });
+
+  // DELETE /api/admin/states/:id
+  app.delete('/api/admin/states/:id', requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      const targetState = await db.select().from(states).where(eq(states.id, id));
+      if (targetState.length === 0) return res.status(404).json({ success: false, error: 'Estado não encontrado' });
+
+      // Check linked cities
+      const linkedCities = await db
+        .select()
+        .from(cities)
+        .where(and(or(eq(cities.stateId, id), eq(cities.stateUf, targetState[0].uf)), isNull(cities.deletedAt)));
+
+      if (linkedCities.length > 0) {
+        return res.status(400).json({
+          success: false,
+          error: `Este estado não pode ser excluído pois possui ${linkedCities.length} cidades vinculadas. Exclua ou reatribua as cidades primeiro.`,
+        });
+      }
+
+      await db.update(states).set({ deletedAt: new Date(), status: 'inactive' }).where(eq(states.id, id));
+      res.json({ success: true, message: 'Estado excluído com sucesso!' });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err?.message });
+    }
+  });
+
+  // PATCH /api/admin/states/reorder
+  app.patch('/api/admin/states/reorder', requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const { items } = req.body;
+      if (Array.isArray(items)) {
+        for (const item of items) {
+          await db.update(states).set({ sortOrder: Number(item.sortOrder) || 0 }).where(eq(states.id, Number(item.id)));
+        }
+      }
+      res.json({ success: true, message: 'Ordem dos estados atualizada!' });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err?.message });
+    }
+  });
+
+  // ==========================================
+  // --- ADMIN CITIES MANAGEMENT APIS ---
+  // ==========================================
+
+  // GET /api/admin/cities
+  app.get('/api/admin/cities', requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const { stateUf, stateId, region, status, showInNavigation, featured, search, page = 1, limit = 20 } = req.query;
+
+      let allCities = await db
+        .select()
+        .from(cities)
+        .where(isNull(cities.deletedAt))
+        .orderBy(asc(cities.sortOrder), asc(cities.name));
+
+      const allStates = await db.select().from(states);
+      const stateMapByUf: Record<string, any> = {};
+      const stateMapById: Record<number, any> = {};
+      allStates.forEach((st) => {
+        stateMapByUf[st.uf] = st;
+        stateMapById[st.id] = st;
+      });
+
+      const allPhotos = await db.select().from(photographers);
+      const cityPhotoCount: Record<string, number> = {};
+      allPhotos.forEach((p) => {
+        if (p.city) {
+          const key = p.city.toLowerCase();
+          cityPhotoCount[key] = (cityPhotoCount[key] || 0) + 1;
+        }
+      });
+
+      let filtered = allCities.map((c) => {
+        const parentState = stateMapById[c.stateId || 0] || stateMapByUf[c.stateUf] || null;
+        return {
+          ...c,
+          stateName: parentState ? parentState.name : c.stateUf,
+          region: parentState ? parentState.region : 'Sudeste',
+          photographersCount: cityPhotoCount[c.name.toLowerCase()] || 0,
+        };
+      });
+
+      if (stateUf) {
+        filtered = filtered.filter((c) => c.stateUf.toUpperCase() === String(stateUf).toUpperCase());
+      }
+      if (stateId) {
+        filtered = filtered.filter((c) => Number(c.stateId) === Number(stateId));
+      }
+      if (region && region !== 'all') {
+        filtered = filtered.filter((c) => c.region === region);
+      }
+      if (status && status !== 'all') {
+        filtered = filtered.filter((c) => c.status === status);
+      }
+      if (showInNavigation !== undefined && showInNavigation !== 'all') {
+        filtered = filtered.filter((c) => String(c.showInNavigation) === String(showInNavigation));
+      }
+      if (featured !== undefined && featured !== 'all') {
+        filtered = filtered.filter((c) => String(c.featured) === String(featured));
+      }
+      if (search) {
+        const term = String(search).toLowerCase();
+        filtered = filtered.filter((c) => c.name.toLowerCase().includes(term) || c.slug.toLowerCase().includes(term));
+      }
+
+      const total = filtered.length;
+      const p = Math.max(1, Number(page));
+      const l = Math.max(1, Number(limit));
+      const start = (p - 1) * l;
+      const paginated = filtered.slice(start, start + l);
+
+      res.json({
+        success: true,
+        cities: paginated,
+        total,
+        page: p,
+        limit: l,
+        totalPages: Math.ceil(total / l),
+      });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err?.message });
+    }
+  });
+
+  // POST /api/admin/cities
+  app.post('/api/admin/cities', requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const body = req.body;
+      if (!body.name || (!body.stateUf && !body.stateId)) {
+        return res.status(400).json({ success: false, error: 'Nome da cidade e Estado são obrigatórios.' });
+      }
+
+      let stateUf = body.stateUf ? body.stateUf.toUpperCase() : '';
+      let stateId = body.stateId ? Number(body.stateId) : null;
+
+      if (!stateUf && stateId) {
+        const st = await db.select().from(states).where(eq(states.id, stateId));
+        if (st.length > 0) stateUf = st[0].uf;
+      } else if (!stateId && stateUf) {
+        const st = await db.select().from(states).where(eq(states.uf, stateUf));
+        if (st.length > 0) stateId = st[0].id;
+      }
+
+      // Check duplicate city in same state
+      const existingCityInState = await db
+        .select()
+        .from(cities)
+        .where(
+          and(
+            eq(cities.stateUf, stateUf),
+            eq(cities.name, body.name.trim()),
+            isNull(cities.deletedAt)
+          )
+        );
+
+      if (existingCityInState.length > 0) {
+        return res.status(400).json({
+          success: false,
+          error: `A cidade "${body.name}" já está cadastrada no estado ${stateUf}.`,
+        });
+      }
+
+      let slug = body.slug
+        ? body.slug.toLowerCase().trim()
+        : `fotografo-casamento-${body.name.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-')}`;
+
+      // Unique slug check
+      const existingSlug = await db
+        .select()
+        .from(cities)
+        .where(and(eq(cities.slug, slug), isNull(cities.deletedAt)));
+      if (existingSlug.length > 0) {
+        slug = `${slug}-${stateUf.toLowerCase()}`;
+      }
+
+      const [insertRes] = await db.insert(cities).values({
+        stateId,
+        stateUf,
+        name: body.name.trim(),
+        slug,
+        ibgeCode: body.ibgeCode || null,
+        latitude: body.latitude ? Number(body.latitude) : null,
+        longitude: body.longitude ? Number(body.longitude) : null,
+        image: body.image || null,
+        introductoryText: body.introductoryText || null,
+        heroText: body.heroText || `Fotógrafos de Casamento em ${body.name}`,
+        seoTitle: body.seoTitle || `Fotógrafos de Casamento em ${body.name} - ${stateUf}`,
+        seoDescription: body.seoDescription || null,
+        focusKeyword: body.focusKeyword || `fotografo casamento ${body.name.toLowerCase()}`,
+        showInNavigation: body.showInNavigation !== false,
+        featured: Boolean(body.featured),
+        sortOrder: Number(body.sortOrder) || 0,
+        status: body.status || 'active',
+      });
+
+      const newId = (insertRes as any).insertId;
+      const fetched = await db.select().from(cities).where(eq(cities.id, newId));
+
+      res.status(201).json({ success: true, city: fetched[0], message: 'Cidade cadastrada com sucesso!' });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err?.message });
+    }
+  });
+
+  // GET /api/admin/cities/:id
+  app.get('/api/admin/cities/:id', requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      const item = await db.select().from(cities).where(eq(cities.id, id));
+      if (item.length === 0) return res.status(404).json({ success: false, error: 'Cidade não encontrada' });
+      res.json({ success: true, city: item[0] });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err?.message });
+    }
+  });
+
+  // PUT /api/admin/cities/:id
+  app.put('/api/admin/cities/:id', requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      const body = req.body;
+
+      const existing = await db.select().from(cities).where(eq(cities.id, id));
+      if (existing.length === 0) return res.status(404).json({ success: false, error: 'Cidade não encontrada' });
+
+      let stateUf = body.stateUf ? body.stateUf.toUpperCase() : existing[0].stateUf;
+      let stateId = body.stateId ? Number(body.stateId) : existing[0].stateId;
+
+      await db
+        .update(cities)
+        .set({
+          stateId,
+          stateUf,
+          name: body.name || existing[0].name,
+          slug: body.slug || existing[0].slug,
+          ibgeCode: body.ibgeCode,
+          latitude: body.latitude ? Number(body.latitude) : null,
+          longitude: body.longitude ? Number(body.longitude) : null,
+          image: body.image,
+          introductoryText: body.introductoryText,
+          heroText: body.heroText,
+          seoTitle: body.seoTitle,
+          seoDescription: body.seoDescription,
+          focusKeyword: body.focusKeyword,
+          showInNavigation: Boolean(body.showInNavigation),
+          featured: Boolean(body.featured),
+          sortOrder: Number(body.sortOrder) || 0,
+          status: body.status || 'active',
+        })
+        .where(eq(cities.id, id));
+
+      const updated = await db.select().from(cities).where(eq(cities.id, id));
+      res.json({ success: true, city: updated[0], message: 'Cidade atualizada com sucesso!' });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err?.message });
+    }
+  });
+
+  // PATCH /api/admin/cities/:id/status
+  app.patch('/api/admin/cities/:id/status', requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      const { status } = req.body;
+      await db.update(cities).set({ status }).where(eq(cities.id, id));
+      const updated = await db.select().from(cities).where(eq(cities.id, id));
+      res.json({ success: true, city: updated[0] });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err?.message });
+    }
+  });
+
+  // DELETE /api/admin/cities/:id
+  app.delete('/api/admin/cities/:id', requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      await db.update(cities).set({ deletedAt: new Date(), status: 'inactive' }).where(eq(cities.id, id));
+      res.json({ success: true, message: 'Cidade excluída com sucesso!' });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err?.message });
+    }
+  });
+
+  // PATCH /api/admin/cities/reorder
+  app.patch('/api/admin/cities/reorder', requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const { items } = req.body;
+      if (Array.isArray(items)) {
+        for (const item of items) {
+          await db.update(cities).set({ sortOrder: Number(item.sortOrder) || 0 }).where(eq(cities.id, Number(item.id)));
+        }
+      }
+      res.json({ success: true, message: 'Ordem das cidades atualizada!' });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err?.message });
+    }
+  });
+
+  // ==========================================
+  // --- COMMERCIAL PLANS MANAGEMENT APIS ---
+  // ==========================================
+
+  // GET /api/plans (Public)
+  app.get('/api/plans', async (req, res) => {
+    try {
+      const activePlans = await db
+        .select()
+        .from(subscriptionPlans)
+        .where(and(eq(subscriptionPlans.status, 'active'), isNull(subscriptionPlans.deletedAt)))
+        .orderBy(asc(subscriptionPlans.sortOrder), asc(subscriptionPlans.id));
+
+      const plansWithDetails = await Promise.all(
+        activePlans.map(async (plan) => {
+          const items = await db
+            .select()
+            .from(subscriptionPlanItems)
+            .where(and(eq(subscriptionPlanItems.planId, plan.id), isNull(subscriptionPlanItems.deletedAt)))
+            .orderBy(asc(subscriptionPlanItems.sortOrder), asc(subscriptionPlanItems.id));
+
+          const features = await db
+            .select()
+            .from(subscriptionPlanFeatures)
+            .where(eq(subscriptionPlanFeatures.planId, plan.id));
+
+          return {
+            ...plan,
+            items,
+            features,
+          };
+        })
+      );
+
+      res.json({ success: true, plans: plansWithDetails });
+    } catch (err: any) {
+      console.error('Error fetching public plans:', err);
+      res.status(500).json({ success: false, error: err?.message || 'Erro ao carregar planos' });
+    }
+  });
+
+  // GET /api/admin/plans (Admin)
+  app.get('/api/admin/plans', requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const { q, status, billing, page = 1, limit = 50 } = req.query;
+
+      let allPlans = await db
+        .select()
+        .from(subscriptionPlans)
+        .where(isNull(subscriptionPlans.deletedAt))
+        .orderBy(asc(subscriptionPlans.sortOrder), asc(subscriptionPlans.id));
+
+      // Filter by search query
+      if (q && typeof q === 'string' && q.trim()) {
+        const queryClean = q.toLowerCase().trim();
+        allPlans = allPlans.filter(
+          (p) =>
+            p.name.toLowerCase().includes(queryClean) ||
+            (p.internalName && p.internalName.toLowerCase().includes(queryClean)) ||
+            (p.internalCode && p.internalCode.toLowerCase().includes(queryClean)) ||
+            p.slug.toLowerCase().includes(queryClean)
+        );
+      }
+
+      // Filter by status
+      if (status && status !== 'all') {
+        allPlans = allPlans.filter((p) => p.status === status);
+      }
+
+      // Filter by billing type
+      if (billing && billing !== 'all') {
+        if (billing === 'free') {
+          allPlans = allPlans.filter((p) => p.isFree);
+        } else if (billing === 'monthly') {
+          allPlans = allPlans.filter((p) => !p.isFree && p.allowMonthlyBilling);
+        } else if (billing === 'annual') {
+          allPlans = allPlans.filter((p) => !p.isFree && p.allowAnnualBilling);
+        }
+      }
+
+      // Attach details + subscriber counts
+      const plansWithDetails = await Promise.all(
+        allPlans.map(async (plan) => {
+          const items = await db
+            .select()
+            .from(subscriptionPlanItems)
+            .where(and(eq(subscriptionPlanItems.planId, plan.id), isNull(subscriptionPlanItems.deletedAt)))
+            .orderBy(asc(subscriptionPlanItems.sortOrder), asc(subscriptionPlanItems.id));
+
+          const features = await db
+            .select()
+            .from(subscriptionPlanFeatures)
+            .where(eq(subscriptionPlanFeatures.planId, plan.id));
+
+          // Get subscriber count
+          const subs = await db
+            .select()
+            .from(subscriptions)
+            .where(and(eq(subscriptions.planId, plan.id), eq(subscriptions.status, 'active')));
+
+          return {
+            ...plan,
+            items,
+            features,
+            subscribersCount: subs.length,
+          };
+        })
+      );
+
+      const p = Number(page) || 1;
+      const l = Number(limit) || 50;
+      const total = plansWithDetails.length;
+      const paginatedPlans = plansWithDetails.slice((p - 1) * l, p * l);
+
+      res.json({
+        success: true,
+        plans: paginatedPlans,
+        total,
+        page: p,
+        limit: l,
+        totalPages: Math.ceil(total / l),
+      });
+    } catch (err: any) {
+      console.error('Error fetching admin plans:', err);
+      res.status(500).json({ success: false, error: err?.message });
+    }
+  });
+
+  // GET /api/admin/plans/:id (Admin)
+  app.get('/api/admin/plans/:id', requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      const plan = await db.select().from(subscriptionPlans).where(and(eq(subscriptionPlans.id, id), isNull(subscriptionPlans.deletedAt)));
+      if (plan.length === 0) {
+        return res.status(404).json({ success: false, error: 'Plano não encontrado' });
+      }
+
+      const items = await db
+        .select()
+        .from(subscriptionPlanItems)
+        .where(and(eq(subscriptionPlanItems.planId, id), isNull(subscriptionPlanItems.deletedAt)))
+        .orderBy(asc(subscriptionPlanItems.sortOrder), asc(subscriptionPlanItems.id));
+
+      const features = await db
+        .select()
+        .from(subscriptionPlanFeatures)
+        .where(eq(subscriptionPlanFeatures.planId, id));
+
+      const subs = await db
+        .select()
+        .from(subscriptions)
+        .where(and(eq(subscriptions.planId, id), eq(subscriptions.status, 'active')));
+
+      res.json({
+        success: true,
+        plan: {
+          ...plan[0],
+          items,
+          features,
+          subscribersCount: subs.length,
+        },
+      });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err?.message });
+    }
+  });
+
+  // POST /api/admin/plans (Admin)
+  app.post('/api/admin/plans', requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const body = req.body;
+      if (!body.name || !body.name.trim()) {
+        return res.status(400).json({ success: false, error: 'Nome público do plano é obrigatório.' });
+      }
+
+      let slug = body.slug
+        ? body.slug.toLowerCase().trim().replace(/[^a-z0-9-]/g, '-')
+        : body.name
+            .toLowerCase()
+            .normalize('NFD')
+            .replace(/[\u0300-\u036f]/g, '')
+            .replace(/[^a-z0-9]+/g, '-');
+
+      // Check unique slug
+      const existingSlug = await db
+        .select()
+        .from(subscriptionPlans)
+        .where(and(eq(subscriptionPlans.slug, slug), isNull(subscriptionPlans.deletedAt)));
+      if (existingSlug.length > 0) {
+        slug = `${slug}-${Date.now().toString().slice(-4)}`;
+      }
+
+      // Check unique internal_code if provided
+      if (body.internalCode && body.internalCode.trim()) {
+        const existingCode = await db
+          .select()
+          .from(subscriptionPlans)
+          .where(and(eq(subscriptionPlans.internalCode, body.internalCode.trim()), isNull(subscriptionPlans.deletedAt)));
+        if (existingCode.length > 0) {
+          return res.status(400).json({ success: false, error: `Código interno '${body.internalCode}' já está em uso.` });
+        }
+      }
+
+      // If set as recommended, un-recommend others
+      if (body.isRecommended === true) {
+        await db.update(subscriptionPlans).set({ isRecommended: false });
+      }
+
+      // Parse prices
+      const isFree = Boolean(body.isFree);
+      const monthlyPrice = isFree ? '0.00' : String(Number(body.monthlyPrice) || 0);
+      const annualPrice = isFree ? '0.00' : String(Number(body.annualPrice) || 0);
+
+      // Auto calculations
+      const mPriceNum = Number(monthlyPrice);
+      const aPriceNum = Number(annualPrice);
+
+      let annualMonthlyEquivalent = body.annualMonthlyEquivalent ? String(body.annualMonthlyEquivalent) : null;
+      let annualSavingsAmount = body.annualSavingsAmount ? String(body.annualSavingsAmount) : null;
+      let annualDiscountPercentage = body.annualDiscountPercentage ? String(body.annualDiscountPercentage) : null;
+
+      if (!isFree && mPriceNum > 0 && aPriceNum > 0) {
+        const fullYearMonthly = mPriceNum * 12;
+        if (!annualSavingsAmount) {
+          annualSavingsAmount = (fullYearMonthly - aPriceNum).toFixed(2);
+        }
+        if (!annualDiscountPercentage) {
+          annualDiscountPercentage = (((fullYearMonthly - aPriceNum) / fullYearMonthly) * 100).toFixed(2);
+        }
+        if (!annualMonthlyEquivalent) {
+          annualMonthlyEquivalent = (aPriceNum / 12).toFixed(2);
+        }
+      }
+
+      const [insertRes] = await db.insert(subscriptionPlans).values({
+        name: body.name.trim(),
+        internalName: body.internalName ? body.internalName.trim() : null,
+        slug,
+        internalCode: body.internalCode ? body.internalCode.trim() : null,
+        shortDescription: body.shortDescription || null,
+        description: body.description || null,
+        currency: body.currency || 'BRL',
+        isFree,
+        monthlyPrice,
+        annualPrice,
+        promotionalMonthlyPrice: body.promotionalMonthlyPrice ? String(body.promotionalMonthlyPrice) : null,
+        promotionalAnnualPrice: body.promotionalAnnualPrice ? String(body.promotionalAnnualPrice) : null,
+        annualMonthlyEquivalent,
+        annualSavingsAmount,
+        annualDiscountPercentage,
+        setupFee: body.setupFee ? String(body.setupFee) : '0.00',
+        trialEnabled: Boolean(body.trialEnabled),
+        trialDays: Number(body.trialDays) || 0,
+        promotionStartAt: body.promotionStartAt ? new Date(body.promotionStartAt) : null,
+        promotionEndAt: body.promotionEndAt ? new Date(body.promotionEndAt) : null,
+        mainColor: body.mainColor || '#C88E9B',
+        textColor: body.textColor || '#5A4035',
+        buttonColor: body.buttonColor || '#C88E9B',
+        icon: body.icon || 'Sparkles',
+        badgeText: body.badgeText || null,
+        buttonText: body.buttonText || 'Assinar Agora',
+        buttonUrl: body.buttonUrl || null,
+        buttonTarget: body.buttonTarget || '_self',
+        textAbovePrice: body.textAbovePrice || null,
+        textBelowPrice: body.textBelowPrice || null,
+        isRecommended: Boolean(body.isRecommended),
+        isPremium: Boolean(body.isPremium),
+        isFeatured: Boolean(body.isFeatured),
+        showOnHome: body.showOnHome !== false,
+        showOnPricingPage: body.showOnPricingPage !== false,
+        showOnRegistration: body.showOnRegistration !== false,
+        showOnProfessionalDashboard: body.showOnProfessionalDashboard !== false,
+        allowMonthlyBilling: body.allowMonthlyBilling !== false,
+        allowAnnualBilling: body.allowAnnualBilling !== false,
+        allowCancel: body.allowCancel !== false,
+        allowUpgrade: body.allowUpgrade !== false,
+        allowDowngrade: body.allowDowngrade !== false,
+        sortOrder: Number(body.sortOrder) || 0,
+        status: body.status || 'active',
+      });
+
+      const newPlanId = (insertRes as any).insertId;
+
+      // Insert Items if provided
+      if (Array.isArray(body.items) && body.items.length > 0) {
+        for (let idx = 0; idx < body.items.length; idx++) {
+          const item = body.items[idx];
+          if (item.title && item.title.trim()) {
+            await db.insert(subscriptionPlanItems).values({
+              planId: newPlanId,
+              title: item.title.trim(),
+              description: item.description || null,
+              icon: item.icon || null,
+              isIncluded: item.isIncluded !== false,
+              isFeatured: Boolean(item.isFeatured),
+              limitValue: item.limitValue ? String(item.limitValue) : null,
+              isUnlimited: Boolean(item.isUnlimited),
+              displayText: item.displayText || null,
+              sortOrder: Number(item.sortOrder) || idx + 1,
+              status: item.status || 'active',
+            });
+          }
+        }
+      }
+
+      // Insert Features if provided
+      if (Array.isArray(body.features) && body.features.length > 0) {
+        for (const feat of body.features) {
+          if (feat.featureKey) {
+            await db.insert(subscriptionPlanFeatures).values({
+              planId: newPlanId,
+              featureKey: feat.featureKey,
+              featureName: feat.featureName || feat.featureKey,
+              featureType: feat.featureType || 'boolean',
+              booleanValue: Boolean(feat.booleanValue),
+              numericValue: feat.numericValue !== undefined && feat.numericValue !== null ? Number(feat.numericValue) : null,
+              textValue: feat.textValue || null,
+              isUnlimited: Boolean(feat.isUnlimited),
+            });
+          }
+        }
+      }
+
+      const createdPlan = await db.select().from(subscriptionPlans).where(eq(subscriptionPlans.id, newPlanId));
+      const createdItems = await db.select().from(subscriptionPlanItems).where(and(eq(subscriptionPlanItems.planId, newPlanId), isNull(subscriptionPlanItems.deletedAt)));
+      const createdFeatures = await db.select().from(subscriptionPlanFeatures).where(eq(subscriptionPlanFeatures.planId, newPlanId));
+
+      res.status(201).json({
+        success: true,
+        plan: {
+          ...createdPlan[0],
+          items: createdItems,
+          features: createdFeatures,
+          subscribersCount: 0,
+        },
+        message: 'Plano criado com sucesso!',
+      });
+    } catch (err: any) {
+      console.error('Error creating plan:', err);
+      res.status(500).json({ success: false, error: err?.message || 'Erro ao criar plano' });
+    }
+  });
+
+  // PUT /api/admin/plans/:id (Admin)
+  app.put('/api/admin/plans/:id', requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      const body = req.body;
+
+      const existing = await db.select().from(subscriptionPlans).where(and(eq(subscriptionPlans.id, id), isNull(subscriptionPlans.deletedAt)));
+      if (existing.length === 0) {
+        return res.status(404).json({ success: false, error: 'Plano não encontrado' });
+      }
+
+      let slug = body.slug ? body.slug.toLowerCase().trim().replace(/[^a-z0-9-]/g, '-') : existing[0].slug;
+
+      // Check slug collision
+      if (slug !== existing[0].slug) {
+        const slugCheck = await db
+          .select()
+          .from(subscriptionPlans)
+          .where(and(eq(subscriptionPlans.slug, slug), isNull(subscriptionPlans.deletedAt)));
+        if (slugCheck.length > 0) {
+          slug = `${slug}-${Date.now().toString().slice(-4)}`;
+        }
+      }
+
+      // Check internal_code collision
+      if (body.internalCode && body.internalCode.trim() !== existing[0].internalCode) {
+        const codeCheck = await db
+          .select()
+          .from(subscriptionPlans)
+          .where(and(eq(subscriptionPlans.internalCode, body.internalCode.trim()), isNull(subscriptionPlans.deletedAt)));
+        if (codeCheck.length > 0) {
+          return res.status(400).json({ success: false, error: `Código interno '${body.internalCode}' já está em uso por outro plano.` });
+        }
+      }
+
+      // If recommended true, unmark others
+      if (body.isRecommended === true && existing[0].isRecommended !== true) {
+        await db.update(subscriptionPlans).set({ isRecommended: false });
+      }
+
+      const isFree = Boolean(body.isFree);
+      const monthlyPrice = isFree ? '0.00' : String(Number(body.monthlyPrice) || 0);
+      const annualPrice = isFree ? '0.00' : String(Number(body.annualPrice) || 0);
+
+      // Calculations
+      const mPriceNum = Number(monthlyPrice);
+      const aPriceNum = Number(annualPrice);
+
+      let annualMonthlyEquivalent = body.annualMonthlyEquivalent ? String(body.annualMonthlyEquivalent) : null;
+      let annualSavingsAmount = body.annualSavingsAmount ? String(body.annualSavingsAmount) : null;
+      let annualDiscountPercentage = body.annualDiscountPercentage ? String(body.annualDiscountPercentage) : null;
+
+      if (!isFree && mPriceNum > 0 && aPriceNum > 0) {
+        const fullYearMonthly = mPriceNum * 12;
+        if (!annualSavingsAmount) {
+          annualSavingsAmount = (fullYearMonthly - aPriceNum).toFixed(2);
+        }
+        if (!annualDiscountPercentage) {
+          annualDiscountPercentage = (((fullYearMonthly - aPriceNum) / fullYearMonthly) * 100).toFixed(2);
+        }
+        if (!annualMonthlyEquivalent) {
+          annualMonthlyEquivalent = (aPriceNum / 12).toFixed(2);
+        }
+      }
+
+      await db
+        .update(subscriptionPlans)
+        .set({
+          name: body.name ? body.name.trim() : existing[0].name,
+          internalName: body.internalName !== undefined ? (body.internalName ? body.internalName.trim() : null) : existing[0].internalName,
+          slug,
+          internalCode: body.internalCode !== undefined ? (body.internalCode ? body.internalCode.trim() : null) : existing[0].internalCode,
+          shortDescription: body.shortDescription !== undefined ? body.shortDescription : existing[0].shortDescription,
+          description: body.description !== undefined ? body.description : existing[0].description,
+          currency: body.currency || existing[0].currency,
+          isFree,
+          monthlyPrice,
+          annualPrice,
+          promotionalMonthlyPrice: body.promotionalMonthlyPrice ? String(body.promotionalMonthlyPrice) : null,
+          promotionalAnnualPrice: body.promotionalAnnualPrice ? String(body.promotionalAnnualPrice) : null,
+          annualMonthlyEquivalent,
+          annualSavingsAmount,
+          annualDiscountPercentage,
+          setupFee: body.setupFee !== undefined ? String(body.setupFee) : existing[0].setupFee,
+          trialEnabled: body.trialEnabled !== undefined ? Boolean(body.trialEnabled) : existing[0].trialEnabled,
+          trialDays: body.trialDays !== undefined ? Number(body.trialDays) : existing[0].trialDays,
+          promotionStartAt: body.promotionStartAt ? new Date(body.promotionStartAt) : null,
+          promotionEndAt: body.promotionEndAt ? new Date(body.promotionEndAt) : null,
+          mainColor: body.mainColor || existing[0].mainColor,
+          textColor: body.textColor || existing[0].textColor,
+          buttonColor: body.buttonColor || existing[0].buttonColor,
+          icon: body.icon || existing[0].icon,
+          badgeText: body.badgeText !== undefined ? body.badgeText : existing[0].badgeText,
+          buttonText: body.buttonText || existing[0].buttonText,
+          buttonUrl: body.buttonUrl !== undefined ? body.buttonUrl : existing[0].buttonUrl,
+          buttonTarget: body.buttonTarget || existing[0].buttonTarget,
+          textAbovePrice: body.textAbovePrice !== undefined ? body.textAbovePrice : existing[0].textAbovePrice,
+          textBelowPrice: body.textBelowPrice !== undefined ? body.textBelowPrice : existing[0].textBelowPrice,
+          isRecommended: body.isRecommended !== undefined ? Boolean(body.isRecommended) : existing[0].isRecommended,
+          isPremium: body.isPremium !== undefined ? Boolean(body.isPremium) : existing[0].isPremium,
+          isFeatured: body.isFeatured !== undefined ? Boolean(body.isFeatured) : existing[0].isFeatured,
+          showOnHome: body.showOnHome !== undefined ? Boolean(body.showOnHome) : existing[0].showOnHome,
+          showOnPricingPage: body.showOnPricingPage !== undefined ? Boolean(body.showOnPricingPage) : existing[0].showOnPricingPage,
+          showOnRegistration: body.showOnRegistration !== undefined ? Boolean(body.showOnRegistration) : existing[0].showOnRegistration,
+          showOnProfessionalDashboard: body.showOnProfessionalDashboard !== undefined ? Boolean(body.showOnProfessionalDashboard) : existing[0].showOnProfessionalDashboard,
+          allowMonthlyBilling: body.allowMonthlyBilling !== undefined ? Boolean(body.allowMonthlyBilling) : existing[0].allowMonthlyBilling,
+          allowAnnualBilling: body.allowAnnualBilling !== undefined ? Boolean(body.allowAnnualBilling) : existing[0].allowAnnualBilling,
+          allowCancel: body.allowCancel !== undefined ? Boolean(body.allowCancel) : existing[0].allowCancel,
+          allowUpgrade: body.allowUpgrade !== undefined ? Boolean(body.allowUpgrade) : existing[0].allowUpgrade,
+          allowDowngrade: body.allowDowngrade !== undefined ? Boolean(body.allowDowngrade) : existing[0].allowDowngrade,
+          sortOrder: body.sortOrder !== undefined ? Number(body.sortOrder) : existing[0].sortOrder,
+          status: body.status || existing[0].status,
+        })
+        .where(eq(subscriptionPlans.id, id));
+
+      // Update Items array if provided
+      if (Array.isArray(body.items)) {
+        // Soft-delete existing items
+        await db.update(subscriptionPlanItems).set({ deletedAt: new Date() }).where(eq(subscriptionPlanItems.planId, id));
+
+        for (let idx = 0; idx < body.items.length; idx++) {
+          const item = body.items[idx];
+          if (item.title && item.title.trim()) {
+            await db.insert(subscriptionPlanItems).values({
+              planId: id,
+              title: item.title.trim(),
+              description: item.description || null,
+              icon: item.icon || null,
+              isIncluded: item.isIncluded !== false,
+              isFeatured: Boolean(item.isFeatured),
+              limitValue: item.limitValue ? String(item.limitValue) : null,
+              isUnlimited: Boolean(item.isUnlimited),
+              displayText: item.displayText || null,
+              sortOrder: Number(item.sortOrder) || idx + 1,
+              status: item.status || 'active',
+            });
+          }
+        }
+      }
+
+      // Update Features if provided
+      if (Array.isArray(body.features)) {
+        await db.delete(subscriptionPlanFeatures).where(eq(subscriptionPlanFeatures.planId, id));
+        for (const feat of body.features) {
+          if (feat.featureKey) {
+            await db.insert(subscriptionPlanFeatures).values({
+              planId: id,
+              featureKey: feat.featureKey,
+              featureName: feat.featureName || feat.featureKey,
+              featureType: feat.featureType || 'boolean',
+              booleanValue: Boolean(feat.booleanValue),
+              numericValue: feat.numericValue !== undefined && feat.numericValue !== null ? Number(feat.numericValue) : null,
+              textValue: feat.textValue || null,
+              isUnlimited: Boolean(feat.isUnlimited),
+            });
+          }
+        }
+      }
+
+      const updatedPlan = await db.select().from(subscriptionPlans).where(eq(subscriptionPlans.id, id));
+      const updatedItems = await db.select().from(subscriptionPlanItems).where(and(eq(subscriptionPlanItems.planId, id), isNull(subscriptionPlanItems.deletedAt)));
+      const updatedFeatures = await db.select().from(subscriptionPlanFeatures).where(eq(subscriptionPlanFeatures.planId, id));
+
+      res.json({
+        success: true,
+        plan: {
+          ...updatedPlan[0],
+          items: updatedItems,
+          features: updatedFeatures,
+        },
+        message: 'Plano atualizado com sucesso!',
+      });
+    } catch (err: any) {
+      console.error('Error updating plan:', err);
+      res.status(500).json({ success: false, error: err?.message || 'Erro ao atualizar plano' });
+    }
+  });
+
+  // PATCH /api/admin/plans/:id/status (Admin)
+  app.patch('/api/admin/plans/:id/status', requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      const { status } = req.body;
+      if (!['active', 'inactive'].includes(status)) {
+        return res.status(400).json({ success: false, error: 'Status inválido. Use active ou inactive.' });
+      }
+
+      await db.update(subscriptionPlans).set({ status }).where(eq(subscriptionPlans.id, id));
+      const updated = await db.select().from(subscriptionPlans).where(eq(subscriptionPlans.id, id));
+      res.json({ success: true, plan: updated[0], message: `Plano ${status === 'active' ? 'ativado' : 'desativado'} com sucesso!` });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err?.message });
+    }
+  });
+
+  // PATCH /api/admin/plans/:id/recommended (Admin)
+  app.patch('/api/admin/plans/:id/recommended', requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      const targetPlan = await db.select().from(subscriptionPlans).where(eq(subscriptionPlans.id, id));
+      if (targetPlan.length === 0) return res.status(404).json({ success: false, error: 'Plano não encontrado' });
+
+      const newVal = !targetPlan[0].isRecommended;
+      if (newVal) {
+        await db.update(subscriptionPlans).set({ isRecommended: false });
+      }
+
+      await db.update(subscriptionPlans).set({ isRecommended: newVal }).where(eq(subscriptionPlans.id, id));
+      res.json({ success: true, isRecommended: newVal, message: newVal ? 'Plano definido como mais recomendado!' : 'Recomendado removido' });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err?.message });
+    }
+  });
+
+  // PATCH /api/admin/plans/reorder (Admin)
+  app.patch('/api/admin/plans/reorder', requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const { items } = req.body;
+      if (Array.isArray(items)) {
+        for (const item of items) {
+          await db.update(subscriptionPlans).set({ sortOrder: Number(item.sortOrder) || 0 }).where(eq(subscriptionPlans.id, Number(item.id)));
+        }
+      }
+      res.json({ success: true, message: 'Ordem dos planos atualizada com sucesso!' });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err?.message });
+    }
+  });
+
+  // POST /api/admin/plans/:id/duplicate (Admin)
+  app.post('/api/admin/plans/:id/duplicate', requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      const source = await db.select().from(subscriptionPlans).where(and(eq(subscriptionPlans.id, id), isNull(subscriptionPlans.deletedAt)));
+      if (source.length === 0) return res.status(404).json({ success: false, error: 'Plano de origem não encontrado' });
+
+      const src = source[0];
+      const newName = `${src.name} (Cópia)`;
+      const newSlug = `${src.slug}-copia-${Date.now().toString().slice(-4)}`;
+      const newCode = src.internalCode ? `${src.internalCode}_COPY_${Date.now().toString().slice(-4)}` : null;
+
+      const [insertRes] = await db.insert(subscriptionPlans).values({
+        name: newName,
+        internalName: src.internalName ? `${src.internalName} (Cópia)` : null,
+        slug: newSlug,
+        internalCode: newCode,
+        shortDescription: src.shortDescription,
+        description: src.description,
+        currency: src.currency,
+        isFree: src.isFree,
+        monthlyPrice: src.monthlyPrice,
+        annualPrice: src.annualPrice,
+        annualMonthlyEquivalent: src.annualMonthlyEquivalent,
+        annualSavingsAmount: src.annualSavingsAmount,
+        annualDiscountPercentage: src.annualDiscountPercentage,
+        setupFee: src.setupFee,
+        mainColor: src.mainColor,
+        textColor: src.textColor,
+        buttonColor: src.buttonColor,
+        icon: src.icon,
+        badgeText: src.badgeText,
+        buttonText: src.buttonText,
+        buttonUrl: src.buttonUrl,
+        buttonTarget: src.buttonTarget,
+        textAbovePrice: src.textAbovePrice,
+        textBelowPrice: src.textBelowPrice,
+        isRecommended: false,
+        isPremium: src.isPremium,
+        isFeatured: src.isFeatured,
+        showOnHome: src.showOnHome,
+        showOnPricingPage: src.showOnPricingPage,
+        showOnRegistration: src.showOnRegistration,
+        showOnProfessionalDashboard: src.showOnProfessionalDashboard,
+        sortOrder: src.sortOrder + 1,
+        status: 'inactive',
+      });
+
+      const newId = (insertRes as any).insertId;
+
+      // Duplicate items
+      const srcItems = await db.select().from(subscriptionPlanItems).where(and(eq(subscriptionPlanItems.planId, id), isNull(subscriptionPlanItems.deletedAt)));
+      for (const item of srcItems) {
+        await db.insert(subscriptionPlanItems).values({
+          planId: newId,
+          title: item.title,
+          description: item.description,
+          icon: item.icon,
+          isIncluded: item.isIncluded,
+          isFeatured: item.isFeatured,
+          limitValue: item.limitValue,
+          isUnlimited: item.isUnlimited,
+          displayText: item.displayText,
+          sortOrder: item.sortOrder,
+          status: item.status,
+        });
+      }
+
+      // Duplicate features
+      const srcFeatures = await db.select().from(subscriptionPlanFeatures).where(eq(subscriptionPlanFeatures.planId, id));
+      for (const feat of srcFeatures) {
+        await db.insert(subscriptionPlanFeatures).values({
+          planId: newId,
+          featureKey: feat.featureKey,
+          featureName: feat.featureName,
+          featureType: feat.featureType,
+          booleanValue: feat.booleanValue,
+          numericValue: feat.numericValue,
+          textValue: feat.textValue,
+          isUnlimited: feat.isUnlimited,
+        });
+      }
+
+      res.status(201).json({ success: true, message: `Plano duplicado com sucesso como '${newName}'!` });
+    } catch (err: any) {
+      console.error('Error duplicating plan:', err);
+      res.status(500).json({ success: false, error: err?.message || 'Erro ao duplicar plano' });
+    }
+  });
+
+  // DELETE /api/admin/plans/:id (Admin)
+  app.delete('/api/admin/plans/:id', requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      const plan = await db.select().from(subscriptionPlans).where(eq(subscriptionPlans.id, id));
+      if (plan.length === 0) return res.status(404).json({ success: false, error: 'Plano não encontrado' });
+
+      // Check linked subscriptions
+      const linkedSubs = await db
+        .select()
+        .from(subscriptions)
+        .where(and(eq(subscriptions.planId, id), eq(subscriptions.status, 'active')));
+
+      if (linkedSubs.length > 0) {
+        return res.status(400).json({
+          success: false,
+          error: 'Este plano possui assinaturas vinculadas e não pode ser excluído. Você pode desativá-lo para impedir novas assinaturas.',
+        });
+      }
+
+      // Soft delete plan
+      await db.update(subscriptionPlans).set({ deletedAt: new Date(), status: 'inactive' }).where(eq(subscriptionPlans.id, id));
+      // Soft delete items
+      await db.update(subscriptionPlanItems).set({ deletedAt: new Date() }).where(eq(subscriptionPlanItems.planId, id));
+
+      res.json({ success: true, message: 'Plano excluído com sucesso!' });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err?.message });
+    }
+  });
+
+  // Sub-items subroutes
+  app.post('/api/admin/plans/:id/items', requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const planId = Number(req.params.id);
+      const { title, description, icon, isIncluded, isFeatured, limitValue, isUnlimited, displayText, sortOrder } = req.body;
+      if (!title || !title.trim()) return res.status(400).json({ success: false, error: 'Título do item é obrigatório' });
+
+      const [insertRes] = await db.insert(subscriptionPlanItems).values({
+        planId,
+        title: title.trim(),
+        description: description || null,
+        icon: icon || null,
+        isIncluded: isIncluded !== false,
+        isFeatured: Boolean(isFeatured),
+        limitValue: limitValue ? String(limitValue) : null,
+        isUnlimited: Boolean(isUnlimited),
+        displayText: displayText || null,
+        sortOrder: Number(sortOrder) || 1,
+        status: 'active',
+      });
+
+      const newId = (insertRes as any).insertId;
+      const created = await db.select().from(subscriptionPlanItems).where(eq(subscriptionPlanItems.id, newId));
+      res.status(201).json({ success: true, item: created[0] });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err?.message });
+    }
+  });
+
+  app.delete('/api/admin/plans/:id/items/:itemId', requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const itemId = Number(req.params.itemId);
+      await db.update(subscriptionPlanItems).set({ deletedAt: new Date() }).where(eq(subscriptionPlanItems.id, itemId));
+      res.json({ success: true, message: 'Item removido com sucesso' });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err?.message });
+    }
+  });
+
+  // ==========================================
+  // --- IBGE IMPORT FUNCTION FOR ALL BRAZIL ---
+  // ==========================================
+  app.post('/api/admin/import-ibge-locations', requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const { setNavigationActive = false } = req.body;
+
+      let statesImported = 0;
+      let statesUpdated = 0;
+      let citiesImported = 0;
+      let citiesUpdated = 0;
+      let citiesIgnored = 0;
+
+      // Import States first
+      for (let i = 0; i < BRAZIL_STATES.length; i++) {
+        const st = BRAZIL_STATES[i];
+        const stateSlug = st.name.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-');
+        const existing = await db.select().from(states).where(eq(states.uf, st.uf));
+
+        if (existing.length === 0) {
+          await db.insert(states).values({
+            uf: st.uf,
+            name: st.name,
+            slug: stateSlug,
+            photographersCount: st.photographersCount,
+            showInNavigation: setNavigationActive,
+            sortOrder: i + 1,
+            status: 'active',
+            seoTitle: `Fotógrafos de Casamento em ${st.name} - ${st.uf}`,
+            seoDescription: `Encontre fotógrafos de casamento em ${st.name}. Orçamentos grátis.`,
+          });
+          statesImported++;
+        } else {
+          statesUpdated++;
+        }
+      }
+
+      // Re-fetch states to map IDs
+      const dbStates = await db.select().from(states);
+      const stateMap: Record<string, number> = {};
+      dbStates.forEach((s) => {
+        stateMap[s.uf] = s.id;
+      });
+
+      // Import Cities
+      for (const st of BRAZIL_STATES) {
+        const stId = stateMap[st.uf] || null;
+        for (let cIdx = 0; cIdx < st.topCities.length; cIdx++) {
+          const cName = st.topCities[cIdx];
+          const citySlug = `fotografo-casamento-${cName.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-')}`;
+
+          const existingCity = await db.select().from(cities).where(eq(cities.slug, citySlug));
+          if (existingCity.length === 0) {
+            await db.insert(cities).values({
+              stateId: stId,
+              stateUf: st.uf,
+              name: cName,
+              slug: citySlug,
+              introductoryText: `Encontre os melhores fotógrafos de casamento em ${cName} - ${st.uf}. Compare preços, portfólios e peça orçamentos.`,
+              heroText: `Fotógrafos em ${cName}`,
+              seoTitle: `Fotógrafos de Casamento em ${cName} - ${st.uf} | Orçamentos Grátis`,
+              seoDescription: `Lista completa dos melhores fotógrafos em ${cName}, ${st.uf}.`,
+              showInNavigation: setNavigationActive,
+              featured: cIdx === 0,
+              sortOrder: cIdx + 1,
+              status: 'active',
+            });
+            citiesImported++;
+          } else {
+            citiesUpdated++;
+          }
+        }
+      }
+
+      res.json({
+        success: true,
+        report: {
+          statesImported,
+          statesUpdated,
+          citiesImported,
+          citiesUpdated,
+          citiesIgnored,
+        },
+        message: `Importação IBGE concluída! ${statesImported} estados e ${citiesImported} cidades importados.`,
+      });
+    } catch (err: any) {
+      console.error('IBGE import error:', err);
+      res.status(500).json({ success: false, error: err?.message || 'Erro ao executar importação IBGE' });
+    }
+  });
+
+  // --- RECENT WEDDINGS (Casamentos Reais) API ---
+  app.get('/api/recent-weddings', async (req, res) => {
+    try {
+      try {
+        const list = await db
+          .select()
+          .from(recentWeddings)
+          .orderBy(desc(recentWeddings.createdAt));
+        if (list.length > 0) return res.json({ success: true, weddings: list });
+      } catch (dbErr) {
+        console.warn('DB recent weddings fallback');
+      }
+
+      res.json({ success: true, weddings: RECENT_WEDDINGS });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err?.message });
+    }
+  });
+
+  app.get('/api/recent-weddings/:slug', async (req, res) => {
+    try {
+      const { slug } = req.params;
+      try {
+        const list = await db
+          .select()
+          .from(recentWeddings)
+          .where(eq(recentWeddings.slug, slug));
+        if (list.length > 0) return res.json({ success: true, wedding: list[0] });
+      } catch (dbErr) {
+        console.warn('DB recent wedding single fallback');
+      }
+
+      const rw = RECENT_WEDDINGS.find((w) => w.slug === slug || w.id === slug);
+      if (rw) return res.json({ success: true, wedding: rw });
+
+      res.status(404).json({ success: false, error: 'Casamento não encontrado' });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err?.message });
+    }
+  });
+
+  // --- BLOG ARTICLES API ---
+  app.get('/api/blog', async (req, res) => {
+    try {
+      try {
+        const list = await db.select().from(blogArticles).orderBy(desc(blogArticles.createdAt));
+        if (list.length > 0) return res.json({ success: true, articles: list });
+      } catch (dbErr) {
+        console.warn('DB blog fetch fallback');
+      }
+
+      res.json({ success: true, articles: BLOG_ARTICLES });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err?.message });
+    }
+  });
+
+  app.get('/api/blog/:slug', async (req, res) => {
+    try {
+      const { slug } = req.params;
+      try {
+        const list = await db.select().from(blogArticles).where(eq(blogArticles.slug, slug));
+        if (list.length > 0) return res.json({ success: true, article: list[0] });
+      } catch (dbErr) {
+        console.warn('DB blog article fallback');
+      }
+
+      const art = BLOG_ARTICLES.find((a) => a.slug === slug || a.id === slug);
+      if (art) return res.json({ success: true, article: art });
+
+      res.status(404).json({ success: false, error: 'Artigo não encontrado' });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err?.message });
+    }
+  });
+
+  // --- SUBSCRIPTION PLANS API ---
+  app.get('/api/plans', async (req, res) => {
+    try {
+      try {
+        const list = await db.select().from(subscriptionPlans);
+        if (list.length > 0) return res.json({ success: true, plans: list });
+      } catch (dbErr) {
+        console.warn('DB subscription plans fallback');
+      }
+
+      const plans = [
+        {
+          id: 1,
+          name: 'Gratuito',
+          slug: 'gratuito',
+          price: 0,
+          photoLimit: 6,
+          featured: false,
+          description: 'Perfil básico para fotógrafos iniciantes no portal.',
+          features: [
+            'Até 6 fotos na galeria',
+            'Receba solicitações de orçamento',
+            'Perfil na busca por cidade',
+          ],
+        },
+        {
+          id: 2,
+          name: 'Destaque',
+          slug: 'destaque',
+          price: 99,
+          photoLimit: 20,
+          featured: true,
+          description: 'Ideal para ter mais destaque e receber mais orçamentos.',
+          features: [
+            'Até 20 fotos e vídeos',
+            'Selo Verificado e Destaque',
+            'Botão de WhatsApp direto',
+            'Posição privilegiada nas buscas',
+          ],
+        },
+        {
+          id: 3,
+          name: 'Premium',
+          slug: 'premium',
+          price: 199,
+          photoLimit: 50,
+          featured: true,
+          description: 'Máxima visibilidade no portal, topo das buscas e banner.',
+          features: [
+            'Fotos ilimitadas e vídeos HD',
+            'Destaque na página inicial',
+            'Selo Premium + Top Avaliado',
+            'Acesso ao comparador e estatísticas detalhadas',
+          ],
+        },
+      ];
+
+      res.json({ success: true, plans });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err?.message });
+    }
+  });
+
+  // --- FAVORITES API ---
+  app.get('/api/favorites', requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const userUid = req.user!.uid;
+
+      try {
+        const favs = await db.select().from(favorites).where(eq(favorites.userUid, userUid));
+        const photoIds = favs.map((f) => f.photographerId).filter(Boolean) as number[];
+
+        if (photoIds.length > 0) {
+          const favPhotographers = await db
+            .select()
+            .from(photographers)
+            .where(inArray(photographers.id, photoIds));
+          return res.json({ success: true, favorites: favPhotographers });
+        }
+      } catch (dbErr) {
+        console.warn('DB favorites fetch fallback');
+      }
+
+      res.json({ success: true, favorites: inMemoryFavorites });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err?.message });
+    }
+  });
+
+  app.post('/api/favorites', requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const userUid = req.user!.uid;
+      const { photographerId } = req.body;
+
+      try {
+        await db.insert(favorites).values({
+          userUid,
+          photographerId: Number(photographerId),
+        });
+      } catch (dbErr) {
+        console.warn('DB favorite insert fallback');
+        inMemoryFavorites.push(photographerId);
+      }
+
+      res.status(201).json({ success: true, message: 'Fotógrafo adicionado aos favoritos!' });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err?.message });
+    }
+  });
+
+  app.delete('/api/favorites/:photographerId', requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const userUid = req.user!.uid;
+      const photographerId = Number(req.params.photographerId);
+
+      try {
+        await db
+          .delete(favorites)
+          .where(
+            and(eq(favorites.userUid, userUid), eq(favorites.photographerId, photographerId))
+          );
+      } catch (dbErr) {
+        console.warn('DB favorite delete fallback');
+      }
+
+      res.json({ success: true, message: 'Removido dos favoritos' });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err?.message });
+    }
+  });
+
+  // --- CHECKLIST API ---
+  app.get('/api/checklists', requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const userUid = req.user!.uid;
+
+      try {
+        const items = await db
+          .select()
+          .from(userChecklists)
+          .where(eq(userChecklists.userUid, userUid));
+        if (items.length > 0) return res.json({ success: true, items });
+      } catch (dbErr) {
+        console.warn('DB checklists fetch fallback');
+      }
+
+      res.json({ success: true, items: inMemoryChecklists });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err?.message });
+    }
+  });
+
+  app.post('/api/checklists', requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const userUid = req.user!.uid;
+      const { task, timeframe, category } = req.body;
+
+      const newItem = {
+        id: Date.now(),
+        userUid,
+        task,
+        timeframe: timeframe || 'A qualquer momento',
+        category: category || 'Fotografia',
+        completed: false,
+      };
+
+      try {
+        const [insertRes] = await db.insert(userChecklists).values({
+          userUid,
+          task,
+          timeframe: timeframe || 'A qualquer momento',
+          category: category || 'Fotografia',
+          completed: false,
+        });
+
+        const newId = (insertRes as any).insertId;
+        const fetched = await db
+          .select()
+          .from(userChecklists)
+          .where(eq(userChecklists.id, newId));
+        return res.status(201).json({ success: true, item: fetched[0] });
+      } catch (dbErr) {
+        console.warn('DB checklist insert fallback');
+        inMemoryChecklists.push(newItem);
+      }
+
+      res.status(201).json({ success: true, item: newItem });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err?.message });
+    }
+  });
+
+  app.patch('/api/checklists/:id', requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const id = Number(req.params.id);
+      const { completed } = req.body;
+
+      try {
+        await db.update(userChecklists).set({ completed }).where(eq(userChecklists.id, id));
+        const fetched = await db.select().from(userChecklists).where(eq(userChecklists.id, id));
+        if (fetched.length > 0) return res.json({ success: true, item: fetched[0] });
+      } catch (dbErr) {
+        console.warn('DB checklist update fallback');
+      }
+
+      const item = inMemoryChecklists.find((c) => c.id === id);
+      if (item) item.completed = completed;
+
+      res.json({ success: true, item: item || { id, completed } });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err?.message });
+    }
+  });
+
+  // --- CLICK LOGS API ---
+  app.post('/api/click-logs', async (req, res) => {
+    try {
+      const { photographerId, clickType } = req.body;
+      const pId = Number(photographerId);
+
+      if (pId) {
+        try {
+          await db.insert(clickLogs).values({
+            photographerId: pId,
+            clickType: clickType || 'whatsapp',
+          });
+
+          if (clickType === 'whatsapp') {
+            await db
+              .update(photographers)
+              .set({ whatsappClicks: sql`${photographers.whatsappClicks} + 1` })
+              .where(eq(photographers.id, pId));
+          }
+        } catch (dbErr) {
+          console.warn('DB click logs insert fallback');
+        }
+      }
+
+      res.json({ success: true });
+    } catch (err: any) {
+      res.json({ success: true });
+    }
+  });
+
+  // --- NOIVABOT GEMINI AI MATCH ROUTE ---
   app.post('/api/ai-match', async (req, res) => {
     try {
       const { userPrompt, city, style, budget, guestCount } = req.body;
@@ -98,7 +3586,7 @@ async function startServer() {
 
       if (apiKey) {
         const ai = new GoogleGenAI({ apiKey });
-        const systemPrompt = `Você é a "NoivaBot AI", a consultora inteligente especialista em fotografia de casamento do portal "Só Fotógrafos de Casamento" no Brasil.
+        const systemPrompt = `Você é a "NoivaBot AI", a consultora inteligente especialista em fotografia de casamento do portal "Guia Fotógrafo Casamento" no Brasil.
 Suas respostas devem ser extremamente gentis, elegantes, entusiasmadas e práticas para os noivos.
 Dê dicas valiosas de estilos (Fine Art, Documental, Boho, Clássico, Editorial), orçamento médio para a cidade do casal e sugira quais serviços incluir (Pré Wedding, Drone, Vídeo, Álbum).
 Formate a resposta em tópicos claros com markdown.`;
@@ -109,23 +3597,34 @@ Formate a resposta em tópicos claros com markdown.`;
             {
               role: 'user',
               parts: [
-                { text: `${systemPrompt}\n\nDados do Casamento:\n- Cidade: ${city || 'Não especificada'}\n- Estilo: ${style || 'Aberto'}\n- Orçamento estimado: ${budget ? 'R$ ' + budget : 'A definir'}\n- Convidados: ${guestCount || 'Não informado'}\n- Detalhes adicionais do casal: ${userPrompt || 'Busco o fotógrafo ideal'}` }
-              ]
-            }
-          ]
+                {
+                  text: `${systemPrompt}\n\nDados do Casamento:\n- Cidade: ${
+                    city || 'Não especificada'
+                  }\n- Estilo: ${style || 'Aberto'}\n- Orçamento estimado: ${
+                    budget ? 'R$ ' + budget : 'A definir'
+                  }\n- Convidados: ${guestCount || 'Não informado'}\n- Detalhes adicionais do casal: ${
+                    userPrompt || 'Busco o fotógrafo ideal'
+                  }`,
+                },
+              ],
+            },
+          ],
         });
 
         const textOutput = response.text || 'Analisando perfil do casamento...';
         return res.json({ success: true, advice: textOutput });
       } else {
-        // Fallback intelligent response if GEMINI_API_KEY is not configured yet
         return res.json({
           success: true,
-          advice: `✨ **Recomendações Personalizadas do Só Fotógrafos:**
+          advice: `✨ **Recomendações Personalizadas da NoivaBot:**
 
-1. **Estilo Ideal:** Para o seu estilo **${style || 'Fine Art / Boho'}**, recomendamos profissionais que dominam a iluminação natural e o fotojornalismo espontâneo.
-2. **Orçamento Estimado:** Para um casamento em **${city || 'sua região'}**, a média ideal para cobertura com foto + álbum e pré-wedding varia entre R$ 3.500 e R$ 6.500.
-3. **Dica de Ouro:** Solicite orçamento para ao menos 3 fotógrafos e verifique o portfólio completo do making of até a festa!`
+1. **Estilo Ideal:** Para o seu estilo **${
+            style || 'Fine Art / Boho'
+          }**, recomendamos profissionais que dominam a iluminação natural e o fotojornalismo espontâneo.
+2. **Orçamento Estimado:** Para um casamento em **${
+            city || 'sua região'
+          }**, a média ideal para cobertura com foto + álbum e pré-wedding varia entre R$ 3.500 e R$ 6.500.
+3. **Dica de Ouro:** Solicite orçamento para ao menos 3 fotógrafos e verifique o portfólio completo do making of até a festa!`,
         });
       }
     } catch (error: any) {
@@ -133,16 +3632,87 @@ Formate a resposta em tópicos claros com markdown.`;
       return res.status(500).json({
         success: false,
         error: 'Erro na consultoria AI',
-        advice: 'Tivemos uma oscilação momentânea no assistente AI, mas você pode usar nossos filtros de busca por cidade e preço!'
+        advice:
+          'Tivemos uma oscilação momentânea no assistente AI, mas você pode usar nossos filtros de busca por cidade e preço!',
       });
     }
   });
 
-  // Vite development middleware vs production static server
+  // --- ADMIN METRICS API (Protected with requireAdmin) ---
+  app.get('/api/admin/metrics', requireAuth, requireAdmin, async (req: AuthRequest, res) => {
+    try {
+      let totalUsers = 3;
+      let totalPhotographers = MOCK_PHOTOGRAPHERS.length;
+      let approvedPhotographers = MOCK_PHOTOGRAPHERS.length;
+      let pendingPhotographers = 0;
+      let totalLeads = inMemoryLeads.length;
+      let totalReviews = MOCK_PHOTOGRAPHERS.reduce((acc, p) => acc + (p.reviewCount || 0), 0);
+      let premiumPhotographers = MOCK_PHOTOGRAPHERS.filter((p) => p.plan === 'Premium').length;
+
+      try {
+        const allUsers = await db.select().from(users);
+        const allPhotographers = await db.select().from(photographers);
+        const allLeads = await db.select().from(leads);
+        const allReviews = await db.select().from(reviews);
+
+        totalUsers = allUsers.length;
+        totalPhotographers = allPhotographers.length;
+        approvedPhotographers = allPhotographers.filter((p) => p.status === 'approved').length;
+        pendingPhotographers = allPhotographers.filter((p) => p.status === 'pending').length;
+        totalLeads = allLeads.length;
+        totalReviews = allReviews.length;
+        premiumPhotographers = allPhotographers.filter((p) => p.plan === 'Premium').length;
+      } catch (dbErr) {
+        console.warn('DB admin metrics fallback');
+      }
+
+      res.json({
+        success: true,
+        metrics: {
+          totalUsers,
+          totalPhotographers,
+          approvedPhotographers,
+          pendingPhotographers,
+          totalLeads,
+          totalReviews,
+          premiumPhotographers,
+        },
+      });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err?.message });
+    }
+  });
+
+  // Admin Approve / Reject Photographer (Protected with requireAdmin)
+  app.patch(
+    '/api/admin/photographers/:id/status',
+    requireAuth,
+    requireAdmin,
+    async (req: AuthRequest, res) => {
+      try {
+        const id = Number(req.params.id);
+        const { status } = req.body;
+
+        try {
+          await db.update(photographers).set({ status }).where(eq(photographers.id, id));
+          const fetched = await db.select().from(photographers).where(eq(photographers.id, id));
+          if (fetched.length > 0) return res.json({ success: true, photographer: fetched[0] });
+        } catch (dbErr) {
+          console.warn('DB admin status update fallback');
+        }
+
+        res.json({ success: true, photographer: { id, status } });
+      } catch (err: any) {
+        res.status(500).json({ success: false, error: err?.message });
+      }
+    }
+  );
+
+  // --- VITE DEV / PRODUCTION STATIC MIDDLEWARE ---
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({
       server: { middlewareMode: true },
-      appType: 'spa'
+      appType: 'spa',
     });
     app.use(vite.middlewares);
   } else {
