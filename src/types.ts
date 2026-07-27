@@ -102,7 +102,9 @@ export interface Photographer {
   styles: StyleType[];
   deliverables: DeliveryType[];
   categories: CategoryType[];
+  serviceCities?: string[];
   badges: BadgeType[];
+  planPermissions?: Record<string, boolean | number | string | null>;
   yearsExperience: number;
   weddingsCompleted: number;
   awardsCount: number;

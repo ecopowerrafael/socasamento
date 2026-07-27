@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { UserCheck, MessageSquare, Eye, Phone, DollarSign, ShieldCheck, Check, Sparkles, Filter, Edit3, Image as ImageIcon, Plus, Trash2, ArrowLeft, ArrowRight, Star, Upload, MoveLeft, MoveRight, LogOut, CreditCard } from 'lucide-react';
-import { Photographer, PhotoItem } from '../types';
+import { Photographer, PhotoItem, CategoryType } from '../types';
 import { PhotographerSubscriptionTab } from './PhotographerSubscriptionTab';
 
 interface PhotographerPanelProps {
@@ -24,6 +24,22 @@ export const PhotographerPanel: React.FC<PhotographerPanelProps> = ({
     Number.isFinite(Number(photographer.priceStartingFrom)) ? Number(photographer.priceStartingFrom) : 0,
   );
   const [editPhone, setEditPhone] = useState(photographer.phone);
+  const [editWhatsapp, setEditWhatsapp] = useState(photographer.whatsapp || '');
+  const [editEmail, setEditEmail] = useState(photographer.email || '');
+  const [editInstagram, setEditInstagram] = useState(photographer.instagram || '');
+  const [editWebsite, setEditWebsite] = useState(photographer.website || '');
+  const [editYearsExperience, setEditYearsExperience] = useState(Number(photographer.yearsExperience) || 0);
+  const [editWeddingsCompleted, setEditWeddingsCompleted] = useState(Number(photographer.weddingsCompleted) || 0);
+  const [editCategories, setEditCategories] = useState<CategoryType[]>(photographer.categories || []);
+  const [editServiceCities, setEditServiceCities] = useState<string[]>(
+    photographer.serviceCities?.length ? photographer.serviceCities : [`${photographer.city} - ${photographer.state}`],
+  );
+  const [newServiceCity, setNewServiceCity] = useState('');
+  const [newServiceState, setNewServiceState] = useState(photographer.state || 'SP');
+  const [availableCategories, setAvailableCategories] = useState<CategoryType[]>([]);
+  const [planPermissions, setPlanPermissions] = useState<Record<string, boolean | number | string | null>>(
+    photographer.planPermissions || {},
+  );
   const [editAvatar, setEditAvatar] = useState(photographer.avatar);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
 
@@ -83,9 +99,27 @@ export const PhotographerPanel: React.FC<PhotographerPanelProps> = ({
       .catch(() => setLoadingLeads(false));
   }, [photographer.id]);
 
+  useEffect(() => {
+    Promise.all([
+      fetch(`/api/photographer/subscription?photographerId=${photographer.id}`).then((response) => response.json()),
+      fetch('/api/categories').then((response) => response.json()),
+    ]).then(([subscriptionData, categoryData]) => {
+      if (subscriptionData?.effectivePlan?.permissions) {
+        setPlanPermissions(subscriptionData.effectivePlan.permissions);
+      }
+      if (Array.isArray(categoryData?.categories)) {
+        setAvailableCategories(categoryData.categories.map((category: { name: string }) => category.name as CategoryType));
+      }
+    }).catch(() => undefined);
+  }, [photographer.id]);
+
   // Dynamic plan permissions logic
-  const isPremiumPlan = photographer.plan === 'Premium';
-  const monthlyLeadsLimit = isPremiumPlan ? -1 : 5; // Default free limit: 5 leads/month
+  const isPremiumPlan = String(photographer.plan || '').includes('Premium');
+  const monthlyLeadsLimit = Number(planPermissions.monthly_leads_limit ?? (isPremiumPlan ? -1 : 5));
+  const galleryPhotosLimit = Number(planPermissions.gallery_photos_limit ?? planPermissions.max_photos ?? -1);
+  const categoriesLimit = Number(planPermissions.categories_limit ?? 1);
+  const serviceCitiesLimit = Number(planPermissions.service_cities_limit ?? planPermissions.max_cities ?? 1);
+  const canSeeLeadContactDetails = Boolean(planPermissions.see_lead_contact_details);
   const respondedLeadsCount = leadsList.filter((l) => l.status !== 'Novo').length;
   const isLimitReached = !isPremiumPlan && monthlyLeadsLimit > 0 && respondedLeadsCount >= monthlyLeadsLimit;
 
@@ -117,6 +151,10 @@ export const PhotographerPanel: React.FC<PhotographerPanelProps> = ({
   const handleAddPhoto = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newPhotoUrl.trim() && !newPhotoFile) return;
+    if (galleryPhotosLimit >= 0 && galleryList.length >= galleryPhotosLimit) {
+      alert(`Seu plano permite até ${galleryPhotosLimit} fotos na galeria.`);
+      return;
+    }
 
     let photoUrl = newPhotoUrl.trim();
     try {
@@ -143,6 +181,7 @@ export const PhotographerPanel: React.FC<PhotographerPanelProps> = ({
       setNewPhotoFile(null);
       setNewPhotoCaption('');
       setNewPhotoFeatured(false);
+      alert('Foto adicionada e salva no portfólio.');
     } catch (error) {
       alert(error instanceof Error ? error.message : 'Não foi possível adicionar a foto.');
     } finally {
@@ -205,6 +244,14 @@ export const PhotographerPanel: React.FC<PhotographerPanelProps> = ({
       bioFull: editBio,
       priceStartingFrom: safeStartingPrice,
       phone: editPhone,
+      whatsapp: editWhatsapp,
+      email: editEmail,
+      instagram: editInstagram,
+      website: editWebsite,
+      yearsExperience: Math.max(0, Math.round(editYearsExperience || 0)),
+      weddingsCompleted: Math.max(0, Math.round(editWeddingsCompleted || 0)),
+      categories: editCategories,
+      serviceCities: editServiceCities,
       avatar: editAvatar.trim() || photographer.avatar,
       gallery: galleryList
     };
@@ -219,7 +266,31 @@ export const PhotographerPanel: React.FC<PhotographerPanelProps> = ({
       return;
     }
     onUpdatePhotographer({ ...updated, ...result.photographer, gallery: galleryList });
-    alert('Perfil e galeria de trabalhos atualizados com sucesso no portal!');
+    alert('Perfil público atualizado com sucesso no portal!');
+  };
+
+  const toggleCategory = (category: CategoryType) => {
+    setEditCategories((current) => {
+      if (current.includes(category)) return current.filter((item) => item !== category);
+      if (categoriesLimit >= 0 && current.length >= categoriesLimit) {
+        alert(`Seu plano permite selecionar até ${categoriesLimit} categoria${categoriesLimit === 1 ? '' : 's'}.`);
+        return current;
+      }
+      return [...current, category];
+    });
+  };
+
+  const addServiceCity = () => {
+    const city = newServiceCity.trim();
+    if (!city) return;
+    const formatted = `${city} - ${newServiceState}`;
+    if (editServiceCities.some((item) => item.toLocaleLowerCase('pt-BR') === formatted.toLocaleLowerCase('pt-BR'))) return;
+    if (serviceCitiesLimit >= 0 && editServiceCities.length >= serviceCitiesLimit) {
+      alert(`Seu plano permite cadastrar até ${serviceCitiesLimit} cidade${serviceCitiesLimit === 1 ? '' : 's'} de atuação.`);
+      return;
+    }
+    setEditServiceCities((current) => [...current, formatted]);
+    setNewServiceCity('');
   };
 
   return (
@@ -307,10 +378,14 @@ export const PhotographerPanel: React.FC<PhotographerPanelProps> = ({
 
         <div className="bg-white p-5 rounded-2xl border border-[#C88E9B]/20 shadow-xs">
           <span className="text-xs font-bold text-[#5A4035]/60 uppercase block">Selo de Qualidade</span>
-          <span className="text-sm font-bold text-[#C7A86A] flex items-center gap-1 mt-1">
-            <ShieldCheck className="w-4 h-4" />
-            <span>Auditado & Verificado</span>
-          </span>
+          {Boolean(planPermissions.verified_badge) ? (
+            <span className="text-sm font-bold text-[#C7A86A] flex items-center gap-1 mt-1">
+              <ShieldCheck className="w-4 h-4" />
+              <span>Auditado & Verificado</span>
+            </span>
+          ) : (
+            <span className="text-sm font-bold text-[#5A4035]/55 block mt-1">Não incluído no plano atual</span>
+          )}
         </div>
       </div>
 
@@ -353,7 +428,7 @@ export const PhotographerPanel: React.FC<PhotographerPanelProps> = ({
 
           <div className="space-y-4">
             {leadsList.map((lead) => {
-              const isLockedForFree = !isPremiumPlan && isLimitReached && lead.status === 'Novo';
+              const isLockedForFree = !canSeeLeadContactDetails || (!isPremiumPlan && isLimitReached && lead.status === 'Novo');
 
               return (
                 <div key={lead.id} className="bg-[#FAF5F0] p-5 rounded-2xl border border-[#C88E9B]/20 space-y-3">
@@ -488,7 +563,7 @@ export const PhotographerPanel: React.FC<PhotographerPanelProps> = ({
                   />
                   <div className="flex-1 w-full">
                     <input
-                      type="url"
+                      type="text"
                       placeholder="https://exemplo.com/minha-foto.jpg"
                       value={editAvatar}
                       onChange={(e) => setEditAvatar(e.target.value)}
@@ -535,6 +610,96 @@ export const PhotographerPanel: React.FC<PhotographerPanelProps> = ({
                 </div>
               </div>
 
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block font-bold text-[#5A4035] mb-1">Anos de Experiência:</label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={editYearsExperience}
+                    onChange={(e) => setEditYearsExperience(Number(e.target.value) || 0)}
+                    className="w-full p-2.5 bg-[#FAF5F0] border border-[#5A4035]/20 rounded-xl"
+                  />
+                </div>
+                <div>
+                  <label className="block font-bold text-[#5A4035] mb-1">Casamentos Cobertos:</label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={editWeddingsCompleted}
+                    onChange={(e) => setEditWeddingsCompleted(Number(e.target.value) || 0)}
+                    className="w-full p-2.5 bg-[#FAF5F0] border border-[#5A4035]/20 rounded-xl"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block font-bold text-[#5A4035] mb-1">WhatsApp:</label>
+                  <input type="text" value={editWhatsapp} onChange={(e) => setEditWhatsapp(e.target.value)} className="w-full p-2.5 bg-[#FAF5F0] border border-[#5A4035]/20 rounded-xl" />
+                </div>
+                <div>
+                  <label className="block font-bold text-[#5A4035] mb-1">E-mail de Contato:</label>
+                  <input type="email" value={editEmail} onChange={(e) => setEditEmail(e.target.value)} className="w-full p-2.5 bg-[#FAF5F0] border border-[#5A4035]/20 rounded-xl" />
+                </div>
+                <div>
+                  <label className="block font-bold text-[#5A4035] mb-1">Instagram:</label>
+                  <input type="text" value={editInstagram} onChange={(e) => setEditInstagram(e.target.value)} className="w-full p-2.5 bg-[#FAF5F0] border border-[#5A4035]/20 rounded-xl" />
+                </div>
+                <div>
+                  <label className="block font-bold text-[#5A4035] mb-1">Site:</label>
+                  <input type="text" value={editWebsite} onChange={(e) => setEditWebsite(e.target.value)} className="w-full p-2.5 bg-[#FAF5F0] border border-[#5A4035]/20 rounded-xl" />
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-[#C88E9B]/20 bg-[#FAF5F0] p-4 space-y-3">
+                <div className="flex items-center justify-between gap-2">
+                  <label className="font-bold text-[#5A4035]">Categorias de Serviço:</label>
+                  <span className="text-[10px] text-[#5A4035]/65">
+                    {editCategories.length} / {categoriesLimit < 0 ? 'ilimitadas' : categoriesLimit}
+                  </span>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {availableCategories.map((category) => {
+                    const selected = editCategories.includes(category);
+                    return (
+                      <button
+                        key={category}
+                        type="button"
+                        onClick={() => toggleCategory(category)}
+                        className={`px-3 py-1.5 rounded-xl font-semibold border ${selected ? 'bg-[#C88E9B] text-white border-[#C88E9B]' : 'bg-white text-[#5A4035] border-[#5A4035]/20'}`}
+                      >
+                        {selected ? '✓ ' : '+ '}{category}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-[#C88E9B]/20 bg-[#FAF5F0] p-4 space-y-3">
+                <div className="flex items-center justify-between gap-2">
+                  <label className="font-bold text-[#5A4035]">Cidades de Atuação:</label>
+                  <span className="text-[10px] text-[#5A4035]/65">
+                    {editServiceCities.length} / {serviceCitiesLimit < 0 ? 'ilimitadas' : serviceCitiesLimit}
+                  </span>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {editServiceCities.map((city) => (
+                    <span key={city} className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-[#C88E9B]/30 rounded-xl font-semibold text-[#5A4035]">
+                      {city}
+                      <button type="button" onClick={() => setEditServiceCities((current) => current.filter((item) => item !== city))} className="text-red-600" aria-label={`Remover ${city}`}>×</button>
+                    </span>
+                  ))}
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-[1fr_90px_auto] gap-2">
+                  <input type="text" placeholder="Nome da cidade" value={newServiceCity} onChange={(e) => setNewServiceCity(e.target.value)} className="p-2.5 bg-white border border-[#5A4035]/20 rounded-xl" />
+                  <select value={newServiceState} onChange={(e) => setNewServiceState(e.target.value)} className="p-2.5 bg-white border border-[#5A4035]/20 rounded-xl">
+                    {'AC AL AP AM BA CE DF ES GO MA MT MS MG PA PB PR PE PI RJ RN RS RO RR SC SP SE TO'.split(' ').map((uf) => <option key={uf} value={uf}>{uf}</option>)}
+                  </select>
+                  <button type="button" onClick={addServiceCity} className="px-4 py-2.5 bg-[#5A4035] text-white font-bold rounded-xl">Adicionar</button>
+                </div>
+              </div>
+
               <div className="pt-2">
                 <button
                   type="submit"
@@ -565,7 +730,7 @@ export const PhotographerPanel: React.FC<PhotographerPanelProps> = ({
 
               <div className="flex items-center gap-2">
                 <span className="text-xs font-bold text-[#5A4035] bg-[#FAF5F0] px-3 py-1.5 rounded-full border border-[#C88E9B]/20">
-                  {galleryList.length} Fotos no Portfólio
+                  {galleryList.length} / {galleryPhotosLimit < 0 ? 'Ilimitadas' : galleryPhotosLimit} Fotos
                 </span>
               </div>
             </div>
@@ -640,7 +805,7 @@ export const PhotographerPanel: React.FC<PhotographerPanelProps> = ({
                 <div className="flex items-center gap-2">
                   <button
                     type="submit"
-                    disabled={uploadingGalleryPhoto}
+                    disabled={uploadingGalleryPhoto || (galleryPhotosLimit >= 0 && galleryList.length >= galleryPhotosLimit)}
                     className="px-5 py-2.5 bg-[#5A4035] text-white font-bold rounded-xl hover:bg-[#432e26] transition-colors flex items-center gap-1.5"
                   >
                     <Plus className="w-4 h-4 text-[#C7A86A]" />
@@ -741,15 +906,8 @@ export const PhotographerPanel: React.FC<PhotographerPanelProps> = ({
               )}
             </div>
 
-            <div className="pt-4 border-t border-[#C88E9B]/20 flex justify-end">
-              <button
-                type="button"
-                onClick={handleSaveProfile}
-                className="px-6 py-3 bg-[#C88E9B] hover:bg-[#b07885] text-white font-bold rounded-xl transition-colors text-xs flex items-center gap-2 shadow-sm"
-              >
-                <Check className="w-4 h-4" />
-                <span>Salvar Alterações de Fotos do Perfil</span>
-              </button>
+            <div className="pt-4 border-t border-[#C88E9B]/20 text-right text-xs text-[#5A4035]/65">
+              Fotos adicionadas, removidas, destacadas ou reordenadas são salvas automaticamente.
             </div>
           </div>
 

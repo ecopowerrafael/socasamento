@@ -133,7 +133,7 @@ async function startServer() {
   // --- PHOTOGRAPHERS API ---
 
   // Get list of photographers with filters
-  app.get('/api/photographers', async (req, res) => {
+  app.get('/api/photographers', optionalAuth, async (req: AuthRequest, res) => {
     try {
       const {
         city,
@@ -148,6 +148,10 @@ async function startServer() {
       } = req.query;
 
       const allPhotographers: any[] = await db.select().from(photographers);
+      const effectivePlans = new Map<number, Awaited<ReturnType<typeof SubscriptionService.getEffectivePlan>>>();
+      await Promise.all(allPhotographers.map(async (photographer) => {
+        effectivePlans.set(photographer.id, await SubscriptionService.getEffectivePlan(photographer.id));
+      }));
       const [allSubscriptions, allPlans] = await Promise.all([
         db.select().from(photographerSubscriptions),
         db.select().from(subscriptionPlans),
@@ -172,6 +176,10 @@ async function startServer() {
       // Filter in memory for maximum search flexibility
       let result = allPhotographers.filter((p) => {
         if (p.status !== 'approved') return false;
+        const effectivePlan = effectivePlans.get(p.id);
+        const role = String(req.user?.role || '').toLowerCase();
+        const canManage = ['admin', 'super_admin', 'superadmin'].includes(role) || req.user?.uid === p.userUid;
+        if (!canManage && effectivePlan?.permissions.public_profile === false) return false;
 
         if (city && p.city.toLowerCase() !== String(city).toLowerCase()) return false;
         if (state && p.state.toLowerCase() !== String(state).toLowerCase()) return false;
@@ -186,7 +194,7 @@ async function startServer() {
           return false;
         if (priceCategory && p.priceCategory !== String(priceCategory)) return false;
 
-        if (verifiedOnly === 'true' && (!p.badges || !p.badges.includes('Verificado')))
+        if (verifiedOnly === 'true' && !effectivePlan?.permissions.verified_badge)
           return false;
         if (minRating && (p.rating || 0) < Number(minRating)) return false;
 
@@ -214,12 +222,15 @@ async function startServer() {
       } else if (sortBy === 'experience') {
         result.sort((a, b) => (b.yearsExperience || 0) - (a.yearsExperience || 0));
       } else {
-        // Default sort: active Premium subscription first, then rating.
+        // Default sort: active Premium subscription, configured search priority, then rating.
         result.sort((a, b) => {
           const aPremium = premiumPhotographerIds.has(a.id);
           const bPremium = premiumPhotographerIds.has(b.id);
           if (aPremium && !bPremium) return -1;
           if (bPremium && !aPremium) return 1;
+          const aPriority = Number(effectivePlans.get(a.id)?.permissions.search_priority || 0);
+          const bPriority = Number(effectivePlans.get(b.id)?.permissions.search_priority || 0);
+          if (aPriority !== bPriority) return bPriority - aPriority;
           return (b.rating || 0) - (a.rating || 0);
         });
       }
@@ -232,12 +243,37 @@ async function startServer() {
             const pMedia = mediaList.filter((m) => m.photographerId === p.id);
             const pPkgs = pkgList.filter((k) => k.photographerId === p.id);
             const pRevs = revList.filter((r) => r.photographerId === p.id);
+            const effectivePlan = effectivePlans.get(p.id)!;
+            const permissions = effectivePlan.permissions;
+            const role = String(req.user?.role || '').toLowerCase();
+            const canManage = ['admin', 'super_admin', 'superadmin'].includes(role) || req.user?.uid === p.userUid;
+            const galleryLimit = Number(permissions.gallery_photos_limit ?? -1);
+            const allPhotoMedia = pMedia
+              .filter((m) => m.type === 'photo')
+              .sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
+            const visiblePhotoMedia = canManage || galleryLimit < 0
+              ? allPhotoMedia
+              : allPhotoMedia.slice(0, galleryLimit);
+            const badges = (Array.isArray(p.badges) ? p.badges : [])
+              .filter((badge: string) => badge !== 'Verificado' && badge !== 'Premium');
+            if (permissions.verified_badge) badges.push('Verificado');
+            if (permissions.premium_badge) badges.push('Premium');
 
             return {
               ...p,
+              badges,
+              phone: canManage || permissions.show_phone ? p.phone : '',
+              whatsapp: canManage || permissions.whatsapp_direct ? p.whatsapp : '',
+              email: canManage || permissions.show_email ? p.email : '',
+              instagram: canManage || permissions.show_social_links ? p.instagram : '',
+              website: canManage || permissions.show_website ? p.website : '',
+              planPermissions: permissions,
+              featuredInHome: canManage ? p.featuredInHome : Boolean(permissions.fixed_home_position),
+              serviceCities: Array.isArray(p.serviceCities) && p.serviceCities.length
+                ? p.serviceCities
+                : [`${p.city} - ${p.state}`],
               hasActivePremium: premiumPhotographerIds.has(p.id),
-              gallery: pMedia
-                .filter((m) => m.type === 'photo')
+              gallery: visiblePhotoMedia
                 .map((m) => ({
                   id: String(m.id),
                   url: m.url,
@@ -284,7 +320,7 @@ async function startServer() {
   });
 
   // Get single photographer by slug
-  app.get('/api/photographers/:slug', async (req, res) => {
+  app.get('/api/photographers/:slug', optionalAuth, async (req: AuthRequest, res) => {
     try {
       const { slug } = req.params;
       const photoList = await db.select().from(photographers).where(eq(photographers.slug, slug));
@@ -296,10 +332,36 @@ async function startServer() {
       const pMedia = await db.select().from(photographerMedia).where(eq(photographerMedia.photographerId, p.id));
       const pPkgs = await db.select().from(photographerPackages).where(eq(photographerPackages.photographerId, p.id));
       const pRevs = await db.select().from(reviews).where(eq(reviews.photographerId, p.id));
+      const effectivePlan = await SubscriptionService.getEffectivePlan(p.id);
+      const permissions = effectivePlan.permissions;
+      const role = String(req.user?.role || '').toLowerCase();
+      const canManage = ['admin', 'super_admin', 'superadmin'].includes(role) || req.user?.uid === p.userUid;
+      if (!canManage && permissions.public_profile === false) {
+        return res.status(404).json({ success: false, error: 'Fotógrafo não encontrado' });
+      }
+      const galleryLimit = Number(permissions.gallery_photos_limit ?? -1);
+      const allPhotoMedia = pMedia
+        .filter((m) => m.type === 'photo')
+        .sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
+      const visiblePhotoMedia = canManage || galleryLimit < 0 ? allPhotoMedia : allPhotoMedia.slice(0, galleryLimit);
+      const badges = (Array.isArray(p.badges) ? p.badges : [])
+        .filter((badge: string) => badge !== 'Verificado' && badge !== 'Premium');
+      if (permissions.verified_badge) badges.push('Verificado');
+      if (permissions.premium_badge) badges.push('Premium');
       const formatted = {
             ...p,
-            gallery: pMedia
-              .filter((m) => m.type === 'photo')
+            badges,
+            phone: canManage || permissions.show_phone ? p.phone : '',
+            whatsapp: canManage || permissions.whatsapp_direct ? p.whatsapp : '',
+            email: canManage || permissions.show_email ? p.email : '',
+            instagram: canManage || permissions.show_social_links ? p.instagram : '',
+            website: canManage || permissions.show_website ? p.website : '',
+            planPermissions: permissions,
+            featuredInHome: canManage ? p.featuredInHome : Boolean(permissions.fixed_home_position),
+            serviceCities: Array.isArray(p.serviceCities) && p.serviceCities.length
+              ? p.serviceCities
+              : [`${p.city} - ${p.state}`],
+            gallery: visiblePhotoMedia
               .map((m) => ({
                 id: String(m.id),
                 url: m.url,
@@ -420,7 +482,10 @@ async function startServer() {
               priceCategory: data.priceCategory || 'R$ 2.000 a R$ 5.000',
               styles: data.styles || ['Fine Art'],
               deliverables: data.deliverables || ['Foto', 'Álbum'],
-              categories: data.categories || ['Fotógrafos'],
+              categories: Array.isArray(data.categories) && data.categories.length ? data.categories.slice(0, 1) : ['Fotógrafos'],
+              serviceCities: Array.isArray(data.serviceCities) && data.serviceCities.length
+                ? data.serviceCities.slice(0, 1)
+                : [`${data.city || 'São Paulo'} - ${data.state || 'SP'}`],
               yearsExperience: Number(data.yearsExperience) || 5,
               weddingsCompleted: Number(data.weddingsCompleted) || 50,
               description: data.description || '',
@@ -441,6 +506,35 @@ async function startServer() {
             savedProfile = fetched[0];
           } else {
             const currentProfile = existingProfile[0];
+            const { permissions } = await SubscriptionService.getEffectivePlan(currentProfile.id);
+            const applySelectionLimit = (
+              submitted: unknown,
+              current: unknown,
+              limitValue: boolean | number | string | null,
+              fieldLabel: string,
+            ) => {
+              const currentValues = Array.isArray(current) ? current.map(String) : [];
+              if (!Array.isArray(submitted)) return currentValues;
+              const submittedValues = [...new Set(submitted.map(String).map((value) => value.trim()).filter(Boolean))];
+              const unchanged = JSON.stringify(submittedValues) === JSON.stringify(currentValues);
+              const limit = Number(limitValue);
+              if (!unchanged && Number.isFinite(limit) && limit >= 0 && submittedValues.length > limit) {
+                throw new Error(`${fieldLabel}: seu plano permite no máximo ${limit}.`);
+              }
+              return submittedValues;
+            };
+            const selectedCategories = applySelectionLimit(
+              data.categories,
+              currentProfile.categories,
+              permissions.categories_limit,
+              'Categorias de serviço',
+            );
+            const selectedServiceCities = applySelectionLimit(
+              data.serviceCities,
+              currentProfile.serviceCities,
+              permissions.service_cities_limit,
+              'Cidades de atuação',
+            );
             await db
               .update(photographers)
               .set({
@@ -455,7 +549,10 @@ async function startServer() {
                 priceCategory: data.priceCategory || currentProfile.priceCategory,
                 styles: Array.isArray(data.styles) ? data.styles : currentProfile.styles,
                 deliverables: Array.isArray(data.deliverables) ? data.deliverables : currentProfile.deliverables,
-                categories: Array.isArray(data.categories) ? data.categories : currentProfile.categories,
+                categories: selectedCategories,
+                serviceCities: selectedServiceCities.length
+                  ? selectedServiceCities
+                  : [`${data.city || currentProfile.city} - ${data.state || currentProfile.state}`],
                 yearsExperience: integerOrFallback(data.yearsExperience, currentProfile.yearsExperience || 0),
                 weddingsCompleted: integerOrFallback(data.weddingsCompleted, currentProfile.weddingsCompleted || 0),
                 description: data.description ?? currentProfile.description,
@@ -482,6 +579,9 @@ async function startServer() {
         });
       } catch (err: any) {
         console.error('Error saving photographer profile:', err);
+        if (/^(Categorias de serviço|Cidades de atuação):/.test(String(err?.message || ''))) {
+          return res.status(400).json({ success: false, error: err.message });
+        }
         res.status(500).json({ success: false, error: 'Não foi possível salvar o perfil. Revise os campos obrigatórios e tente novamente.' });
       }
     }
@@ -491,6 +591,10 @@ async function startServer() {
   app.post('/api/photographers/:id/reviews', optionalAuth, async (req: AuthRequest, res) => {
     try {
       const photographerId = Number(req.params.id) || 1;
+      const { permissions } = await SubscriptionService.getEffectivePlan(photographerId);
+      if (permissions.can_receive_reviews === false) {
+        return res.status(403).json({ success: false, error: 'Este perfil não está recebendo avaliações no plano atual.' });
+      }
       const { coupleName, date, weddingLocation, rating, comment, verifiedBooking } = req.body;
 
       const [insertRes] = await db.insert(reviews).values({
@@ -559,6 +663,29 @@ async function startServer() {
       try {
         const photographerId = Number(req.params.id) || 1;
         const { url, caption, category, featured, type, thumbnail, embedUrl, sortOrder } = req.body;
+        const owner = await db.select().from(photographers).where(eq(photographers.id, photographerId)).limit(1);
+        if (!owner.length) return res.status(404).json({ success: false, error: 'Fotógrafo não encontrado.' });
+        const role = String(req.user?.role || '').toLowerCase();
+        const isAdmin = ['admin', 'super_admin', 'superadmin'].includes(role);
+        if (!isAdmin && owner[0].userUid !== req.user?.uid) {
+          return res.status(403).json({ success: false, error: 'Você não pode adicionar fotos neste perfil.' });
+        }
+        const { permissions } = await SubscriptionService.getEffectivePlan(photographerId);
+        const galleryLimit = Number(permissions.gallery_photos_limit ?? -1);
+        if ((type || 'photo') === 'photo' && galleryLimit >= 0) {
+          const currentPhotos = (await db.select().from(photographerMedia)
+            .where(eq(photographerMedia.photographerId, photographerId)))
+            .filter((media) => media.type === 'photo').length;
+          if (currentPhotos >= galleryLimit) {
+            return res.status(403).json({
+              success: false,
+              error: `Seu plano permite até ${galleryLimit} fotos na galeria. Remova uma foto ou faça upgrade.`,
+            });
+          }
+        }
+        if (!url || typeof url !== 'string') {
+          return res.status(400).json({ success: false, error: 'Envie uma imagem ou informe uma URL válida.' });
+        }
 
         const [insertRes] = await db.insert(photographerMedia).values({
             photographerId,
@@ -592,6 +719,15 @@ async function startServer() {
     async (req: AuthRequest, res) => {
       try {
         const mediaId = Number(req.params.mediaId);
+        const existing = await db.select().from(photographerMedia).where(eq(photographerMedia.id, mediaId)).limit(1);
+        if (!existing.length) return res.status(404).json({ success: false, error: 'Mídia não encontrada.' });
+        const owner = await db.select().from(photographers)
+          .where(eq(photographers.id, existing[0].photographerId)).limit(1);
+        const role = String(req.user?.role || '').toLowerCase();
+        const isAdmin = ['admin', 'super_admin', 'superadmin'].includes(role);
+        if (!isAdmin && owner[0]?.userUid !== req.user?.uid) {
+          return res.status(403).json({ success: false, error: 'Você não pode excluir esta mídia.' });
+        }
         await db.delete(photographerMedia).where(eq(photographerMedia.id, mediaId));
         res.json({ success: true, message: 'Mídia removida com sucesso' });
       } catch (err: any) {
@@ -671,21 +807,32 @@ async function startServer() {
   // --- LEADS & ORÇAMENTOS API ---
 
   // Get leads (Filtered by photographer ID or all for admin)
-  app.get('/api/leads', optionalAuth, async (req: AuthRequest, res) => {
+  app.get('/api/leads', requireAuth, requirePhotographerOrAdmin, async (req: AuthRequest, res) => {
     try {
-      const { photographerId, photographerSlug } = req.query;
+      const role = String(req.user?.role || '').toLowerCase();
+      const isAdmin = ['admin', 'super_admin', 'superadmin'].includes(role);
+      let requestedPhotographerId = req.query.photographerId ? Number(req.query.photographerId) : undefined;
+      if (!isAdmin) {
+        requestedPhotographerId = req.user?.photographerId ? Number(req.user.photographerId) : undefined;
+        if (!requestedPhotographerId && req.user?.uid) {
+          const ownedProfile = await db.select({ id: photographers.id }).from(photographers)
+            .where(eq(photographers.userUid, req.user.uid)).limit(1);
+          requestedPhotographerId = ownedProfile[0]?.id;
+        }
+      }
 
       let allLeads: any[] = await db.select().from(leads).orderBy(desc(leads.createdAt));
-
-      if (photographerSlug) {
+      if (requestedPhotographerId) {
+        const pId = Number(requestedPhotographerId);
         allLeads = allLeads.filter(
-          (l) =>
-            l.photographerSlug === photographerSlug ||
-            (Array.isArray(l.photographerIds) && l.photographerIds.includes(String(photographerSlug)))
+          (l) => l.photographerId === pId || (Array.isArray(l.photographerIds) && l.photographerIds.includes(String(pId))),
         );
-      } else if (photographerId) {
-        const pId = Number(photographerId);
-        allLeads = allLeads.filter((l) => l.photographerId === pId);
+        if (!isAdmin) {
+          const { permissions } = await SubscriptionService.getEffectivePlan(pId);
+          if (!permissions.see_lead_contact_details) {
+            allLeads = allLeads.map((lead) => ({ ...lead, email: '', phone: '', whatsapp: '' }));
+          }
+        }
       }
 
       res.json({ success: true, leads: allLeads });
@@ -700,10 +847,22 @@ async function startServer() {
       const body = req.body;
       const userUid = req.user?.uid || null;
 
-      let photographerId: number | null = null;
-      if (body.photographerId && typeof body.photographerId === 'number') {
-        photographerId = body.photographerId;
+      const requestedPhotographerIds = [...new Set([
+        ...(Array.isArray(body.photographerIds) ? body.photographerIds : []),
+        ...(body.photographerId ? [body.photographerId] : []),
+      ].map(Number).filter((id) => Number.isInteger(id) && id > 0))];
+      const allowedPhotographerIds: number[] = [];
+      for (const requestedId of requestedPhotographerIds) {
+        const profile = await db.select({ id: photographers.id, status: photographers.status })
+          .from(photographers).where(eq(photographers.id, requestedId)).limit(1);
+        if (!profile.length || profile[0].status !== 'approved') continue;
+        const { permissions } = await SubscriptionService.getEffectivePlan(requestedId);
+        if (permissions.can_receive_leads !== false) allowedPhotographerIds.push(requestedId);
       }
+      if (!allowedPhotographerIds.length) {
+        return res.status(403).json({ success: false, error: 'Os fotógrafos selecionados não estão recebendo orçamentos no plano atual.' });
+      }
+      const photographerId: number | null = allowedPhotographerIds.length === 1 ? allowedPhotographerIds[0] : null;
 
       const [insertRes] = await db.insert(leads).values({
           userUid,
@@ -720,7 +879,7 @@ async function startServer() {
           budgetLimit: Number(body.budgetLimit) || 0,
           servicesNeeded: body.servicesNeeded || [],
           stylePreference: body.stylePreference || '',
-          photographerIds: body.photographerIds || (body.photographerId ? [String(body.photographerId)] : []),
+          photographerIds: allowedPhotographerIds.map(String),
           message: body.message || '',
           status: 'Novo',
         });
@@ -728,8 +887,8 @@ async function startServer() {
         const newId = (insertRes as any).insertId;
         const fetchedLead = await db.select().from(leads).where(eq(leads.id, newId));
 
-        if (photographerId) {
-          const [photographer] = await db.select({ userUid: photographers.userUid }).from(photographers).where(eq(photographers.id, photographerId)).limit(1);
+        for (const recipientPhotographerId of allowedPhotographerIds) {
+          const [photographer] = await db.select({ userUid: photographers.userUid }).from(photographers).where(eq(photographers.id, recipientPhotographerId)).limit(1);
           if (photographer?.userUid) {
             const [recipient] = await db.select({ id: users.id, role: users.role }).from(users).where(eq(users.uid, photographer.userUid)).limit(1);
             if (recipient) {
@@ -767,10 +926,21 @@ async function startServer() {
     '/api/leads/:id/status',
     requireAuth,
     requirePhotographerOrAdmin,
-    async (req, res) => {
+    async (req: AuthRequest, res) => {
       try {
         const leadId = Number(req.params.id);
         const { status } = req.body;
+
+        const existingLead = await db.select().from(leads).where(eq(leads.id, leadId)).limit(1);
+        if (!existingLead.length) return res.status(404).json({ success: false, error: 'Orçamento não encontrado.' });
+        const role = String(req.user?.role || '').toLowerCase();
+        const isAdmin = ['admin', 'super_admin', 'superadmin'].includes(role);
+        const ownPhotographerId = Number(req.user?.photographerId || 0);
+        const belongsToPhotographer = existingLead[0].photographerId === ownPhotographerId
+          || (Array.isArray(existingLead[0].photographerIds) && existingLead[0].photographerIds.includes(String(ownPhotographerId)));
+        if (!isAdmin && !belongsToPhotographer) {
+          return res.status(403).json({ success: false, error: 'Você não pode alterar este orçamento.' });
+        }
 
         await db.update(leads).set({ status }).where(eq(leads.id, leadId));
         const fetched = await db.select().from(leads).where(eq(leads.id, leadId));
@@ -2439,7 +2609,7 @@ async function startServer() {
   // ==========================================
 
   // GET /api/photographer/subscription (Active Plan & Permissions Resolution)
-  app.get('/api/photographer/subscription', optionalAuth, async (req: AuthRequest, res) => {
+  app.get('/api/photographer/subscription', requireAuth, async (req: AuthRequest, res) => {
     try {
       let photographerId: number | undefined = req.user?.photographerId ? Number(req.user.photographerId) : undefined;
 
@@ -2450,6 +2620,12 @@ async function startServer() {
       if (!photographerId && req.user?.uid) {
         const p = await db.select().from(photographers).where(eq(photographers.userUid, req.user.uid));
         if (p.length > 0) photographerId = Number(p[0].id);
+      }
+
+      const role = String(req.user?.role || '').toLowerCase();
+      const isAdmin = ['admin', 'super_admin', 'superadmin'].includes(role);
+      if (!isAdmin && photographerId && String(req.user?.photographerId || '') !== String(photographerId)) {
+        return res.status(403).json({ success: false, error: 'Você não pode consultar a assinatura de outro perfil.' });
       }
 
       if (!photographerId) {
@@ -2467,6 +2643,13 @@ async function startServer() {
               verified_badge: false,
               premium_badge: false,
               whatsapp_direct: false,
+              show_phone: false,
+              show_email: false,
+              show_social_links: false,
+              show_website: false,
+              public_profile: true,
+              can_receive_leads: true,
+              see_lead_contact_details: false,
               search_priority: false,
               crm_access: true,
               fixed_home_position: false,

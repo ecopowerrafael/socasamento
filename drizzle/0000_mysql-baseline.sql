@@ -506,6 +506,7 @@ CREATE TABLE `photographers` (
 	`styles` json DEFAULT ('[]'),
 	`deliverables` json DEFAULT ('[]'),
 	`categories` json DEFAULT ('[]'),
+	`service_cities` json DEFAULT ('[]'),
 	`badges` json DEFAULT ('[]'),
 	`years_experience` int DEFAULT 0,
 	`weddings_completed` int DEFAULT 0,

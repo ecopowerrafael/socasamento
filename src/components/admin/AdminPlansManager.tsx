@@ -114,9 +114,9 @@ const DEFAULT_TECHNICAL_FEATURES: PlanFeature[] = [
   { featureKey: 'public_profile', featureName: 'Perfil Público Ativo no Guia', featureType: 'boolean', booleanValue: true, numericValue: null },
   { featureKey: 'show_premium_badge', featureName: 'Selo Oficial / Destaque Premium', featureType: 'boolean', booleanValue: false, numericValue: null },
   { featureKey: 'show_whatsapp_button', featureName: 'Botão Direto de WhatsApp', featureType: 'boolean', booleanValue: false, numericValue: null },
-  { featureKey: 'show_phone', featureName: 'Exibição do Telefone Comercial', featureType: 'boolean', booleanValue: true, numericValue: null },
-  { featureKey: 'show_email', featureName: 'Exibição do E-mail de Contato', featureType: 'boolean', booleanValue: true, numericValue: null },
-  { featureKey: 'show_social_links', featureName: 'Exibição de Redes Sociais & Links', featureType: 'boolean', booleanValue: true, numericValue: null },
+  { featureKey: 'show_phone', featureName: 'Exibição do Telefone Comercial', featureType: 'boolean', booleanValue: false, numericValue: null },
+  { featureKey: 'show_email', featureName: 'Exibição do E-mail de Contato', featureType: 'boolean', booleanValue: false, numericValue: null },
+  { featureKey: 'show_social_links', featureName: 'Exibição de Redes Sociais & Links', featureType: 'boolean', booleanValue: false, numericValue: null },
   { featureKey: 'show_website', featureName: 'Exibição do Link do Site Próprio', featureType: 'boolean', booleanValue: false, numericValue: null },
 
   // Galeria & Mídia
@@ -128,6 +128,7 @@ const DEFAULT_TECHNICAL_FEATURES: PlanFeature[] = [
   // Área de Atuação
   { featureKey: 'max_cities', featureName: 'Cidades de Atuação (-1 = Ilimitado)', featureType: 'numeric', booleanValue: true, numericValue: 3, isUnlimited: false },
   { featureKey: 'max_states', featureName: 'Estados de Atuação (-1 = Ilimitado)', featureType: 'numeric', booleanValue: true, numericValue: 1, isUnlimited: false },
+  { featureKey: 'max_categories', featureName: 'Categorias de Serviço (-1 = Ilimitado)', featureType: 'numeric', booleanValue: true, numericValue: 1, isUnlimited: false },
 
   // Leads & Orçamentos
   { featureKey: 'can_receive_leads', featureName: 'Receber Solicitações de Orçamento', featureType: 'boolean', booleanValue: true, numericValue: null },

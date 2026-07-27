@@ -19,6 +19,13 @@ export interface PhotographerPermissions {
   verified_badge: boolean;
   premium_badge: boolean;
   whatsapp_direct: boolean;
+  show_phone: boolean;
+  show_email: boolean;
+  show_social_links: boolean;
+  show_website: boolean;
+  public_profile: boolean;
+  can_receive_leads: boolean;
+  see_lead_contact_details: boolean;
   search_priority: boolean;
   crm_access: boolean;
   fixed_home_position: boolean;
@@ -141,6 +148,13 @@ export class SubscriptionService {
       verified_badge: !targetPlan?.isFree,
       premium_badge: Boolean(targetPlan?.isPremium),
       whatsapp_direct: !targetPlan?.isFree,
+      show_phone: !targetPlan?.isFree,
+      show_email: !targetPlan?.isFree,
+      show_social_links: !targetPlan?.isFree,
+      show_website: !targetPlan?.isFree,
+      public_profile: true,
+      can_receive_leads: true,
+      see_lead_contact_details: !targetPlan?.isFree,
       search_priority: !targetPlan?.isFree,
       crm_access: true,
       fixed_home_position: Boolean(targetPlan?.isPremium),
@@ -155,17 +169,35 @@ export class SubscriptionService {
         .from(subscriptionPlanFeatures)
         .where(eq(subscriptionPlanFeatures.planId, targetPlan.id));
 
+      const permissionAliases: Record<string, keyof PhotographerPermissions> = {
+        gallery_photos: 'gallery_photos_limit',
+        max_photos: 'gallery_photos_limit',
+        service_cities: 'service_cities_limit',
+        max_cities: 'service_cities_limit',
+        categories: 'categories_limit',
+        max_categories: 'categories_limit',
+        monthly_leads: 'monthly_leads_limit',
+        show_premium_badge: 'premium_badge',
+        show_whatsapp_button: 'whatsapp_direct',
+        real_weddings: 'real_weddings_publication',
+        featured_home: 'fixed_home_position',
+      };
+
       features.forEach((feat) => {
         if (feat.featureKey) {
+          let permissionValue: boolean | number | string | null = null;
           if (feat.isUnlimited) {
-            defaultPermissions[feat.featureKey] = -1;
+            permissionValue = -1;
           } else if (feat.featureType === 'numeric' && feat.numericValue !== null) {
-            defaultPermissions[feat.featureKey] = feat.numericValue;
+            permissionValue = feat.numericValue;
           } else if (feat.featureType === 'boolean') {
-            defaultPermissions[feat.featureKey] = Boolean(feat.booleanValue);
+            permissionValue = Boolean(feat.booleanValue);
           } else if (feat.textValue !== null) {
-            defaultPermissions[feat.featureKey] = feat.textValue;
+            permissionValue = feat.textValue;
           }
+          defaultPermissions[feat.featureKey] = permissionValue;
+          const canonicalKey = permissionAliases[feat.featureKey];
+          if (canonicalKey) defaultPermissions[canonicalKey] = permissionValue;
         }
       });
     }

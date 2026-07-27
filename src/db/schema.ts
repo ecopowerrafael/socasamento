@@ -131,6 +131,7 @@ export const photographers = mysqlTable('photographers', {
   styles: json('styles').$type<string[]>().default([]),
   deliverables: json('deliverables').$type<string[]>().default([]),
   categories: json('categories').$type<string[]>().default([]),
+  serviceCities: json('service_cities').$type<string[]>().default([]),
   badges: json('badges').$type<string[]>().default([]),
   yearsExperience: int('years_experience').default(0),
   weddingsCompleted: int('weddings_completed').default(0),

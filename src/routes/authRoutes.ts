@@ -53,6 +53,7 @@ router.post('/register-photographer', async (req, res) => {
         styles: [],
         deliverables: [],
         categories: ['Fotógrafos'],
+        serviceCities: [`${String(city).trim()} - ${String(state).trim().toUpperCase().slice(0, 2)}`],
         badges: [],
         faqs: [],
         status: 'approved',

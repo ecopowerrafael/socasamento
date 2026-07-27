@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { 
-  Star, ShieldCheck, MapPin, Award, Check, Sparkles, Phone, MessageSquare, 
+  Star, ShieldCheck, MapPin, Check, Sparkles, Phone, MessageSquare,
   Instagram, Globe, Mail, Calendar, Camera, Film, Compass, ChevronDown, 
   ChevronUp, X, Heart, Scale, Share2, DollarSign, Users, Info
 } from 'lucide-react';
@@ -39,6 +39,18 @@ export const PhotographerProfileView: React.FC<PhotographerProfileViewProps> = (
     comment: ''
   });
   const [reviewsList, setReviewsList] = useState<Review[]>(photographer.reviews || []);
+  const permissions = photographer.planPermissions || {};
+  const showVerifiedBadge = Boolean(permissions.verified_badge);
+  const showWhatsApp = Boolean(permissions.whatsapp_direct) && Boolean(photographer.whatsapp);
+  const showPhone = Boolean(permissions.show_phone) && Boolean(photographer.phone);
+  const showEmail = Boolean(permissions.show_email) && Boolean(photographer.email);
+  const showSocialLinks = Boolean(permissions.show_social_links) && Boolean(photographer.instagram);
+  const showWebsite = Boolean(permissions.show_website) && Boolean(photographer.website);
+  const canReceiveLeads = permissions.can_receive_leads !== false;
+  const canReceiveReviews = permissions.can_receive_reviews !== false;
+  const serviceCities = photographer.serviceCities?.length
+    ? photographer.serviceCities
+    : [`${photographer.city} - ${photographer.state}`];
 
   const galleryCategories = ['Todas', 'Pré Wedding', 'Making Of', 'Cerimônia', 'Festa', 'Drone', 'Álbuns'];
 
@@ -148,7 +160,7 @@ export const PhotographerProfileView: React.FC<PhotographerProfileViewProps> = (
                 <h1 className="text-2xl sm:text-3xl font-serif font-bold text-[#5A4035]">
                   {photographer.studioName}
                 </h1>
-                {photographer.badges.includes('Verificado') && (
+                {showVerifiedBadge && (
                   <span className="bg-[#5A4035] text-[#C7A86A] text-xs font-bold px-3 py-1 rounded-full flex items-center gap-1 shadow-sm border border-[#C7A86A]/40">
                     <ShieldCheck className="w-3.5 h-3.5 text-[#C7A86A]" />
                     <span>Selo Verificado</span>
@@ -160,7 +172,7 @@ export const PhotographerProfileView: React.FC<PhotographerProfileViewProps> = (
                 <MapPin className="w-4 h-4 text-[#C88E9B]" />
                 <span>{photographer.city}, {photographer.state}</span>
                 {photographer.neighborhood && <span>({photographer.neighborhood})</span>}
-                <span className="text-[#C88E9B]">• Atende Brasil inteiro</span>
+                <span className="text-[#C88E9B]">• Atende: {serviceCities.join(', ')}</span>
               </p>
 
               <div className="flex items-center gap-3 pt-1 text-xs">
@@ -169,34 +181,31 @@ export const PhotographerProfileView: React.FC<PhotographerProfileViewProps> = (
                   <span>{photographer.rating.toFixed(1)}</span>
                   <span className="text-[#5A4035]/60">({reviewsList.length} avaliações)</span>
                 </div>
-
-                <div className="text-[#5A4035]/80 font-semibold">
-                  <Award className="w-4 h-4 text-[#C7A86A] inline mr-1" />
-                  <span>{photographer.awardsCount} Prêmios Nacionais</span>
-                </div>
               </div>
             </div>
           </div>
 
           {/* Quick Contact CTAs */}
           <div className="w-full md:w-auto flex flex-col sm:flex-row gap-3 pt-4 md:pt-0 border-t md:border-t-0 border-[#5A4035]/10">
-            <a
-              href={`https://wa.me/${photographer.whatsapp}?text=Ol%C3%A1!%20Encontrei%20seu%20perfil%20no%20portal%20S%C3%B3%20Fot%C3%B3grafos%20de%20Casamento%20e%20gostaria%20de%20um%20or%C3%A7amento.`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="px-6 py-3 bg-[#25D366] hover:bg-[#1ebd59] text-white font-bold text-sm rounded-xl shadow-md transition-all flex items-center justify-center gap-2"
-            >
-              <MessageSquare className="w-4 h-4 fill-white" />
-              <span>WhatsApp Direto</span>
-            </a>
+            {showWhatsApp && (
+              <a
+                href={`https://wa.me/${photographer.whatsapp}?text=Ol%C3%A1!%20Encontrei%20seu%20perfil%20no%20portal%20S%C3%B3%20Fot%C3%B3grafos%20de%20Casamento%20e%20gostaria%20de%20um%20or%C3%A7amento.`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="px-6 py-3 bg-[#25D366] hover:bg-[#1ebd59] text-white font-bold text-sm rounded-xl shadow-md transition-all flex items-center justify-center gap-2"
+              >
+                <MessageSquare className="w-4 h-4 fill-white" />
+                <span>WhatsApp Direto</span>
+              </a>
+            )}
 
-            <button
+            {canReceiveLeads && <button
               onClick={() => onOpenQuote(photographer)}
               className="px-6 py-3 bg-[#C88E9B] hover:bg-[#b07885] text-white font-bold text-sm rounded-xl shadow-md transition-all flex items-center justify-center gap-2"
             >
               <Sparkles className="w-4 h-4 text-[#C7A86A]" />
               <span>Solicitar Orçamento</span>
-            </button>
+            </button>}
           </div>
 
         </div>
@@ -219,7 +228,7 @@ export const PhotographerProfileView: React.FC<PhotographerProfileViewProps> = (
               </p>
 
               {/* Key Metrics Stats Grid */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 pt-2">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-2">
                 <div className="bg-[#FAF5F0] p-4 rounded-2xl border border-[#C88E9B]/20 text-center">
                   <span className="text-2xl font-serif font-bold text-[#5A4035] block">{photographer.yearsExperience} Anos</span>
                   <span className="text-xs text-[#5A4035]/70 font-semibold">de Experiência</span>
@@ -227,10 +236,6 @@ export const PhotographerProfileView: React.FC<PhotographerProfileViewProps> = (
                 <div className="bg-[#FAF5F0] p-4 rounded-2xl border border-[#C88E9B]/20 text-center">
                   <span className="text-2xl font-serif font-bold text-[#5A4035] block">{photographer.weddingsCompleted}+</span>
                   <span className="text-xs text-[#5A4035]/70 font-semibold">Casamentos Cobertos</span>
-                </div>
-                <div className="bg-[#FAF5F0] p-4 rounded-2xl border border-[#C88E9B]/20 text-center">
-                  <span className="text-2xl font-serif font-bold text-[#5A4035] block">{photographer.awardsCount}</span>
-                  <span className="text-xs text-[#5A4035]/70 font-semibold">Prêmios de Fotografia</span>
                 </div>
                 <div className="bg-[#FAF5F0] p-4 rounded-2xl border border-[#C88E9B]/20 text-center">
                   <span className="text-2xl font-serif font-bold text-[#5A4035] block">{reviewsList.length}</span>
@@ -271,7 +276,9 @@ export const PhotographerProfileView: React.FC<PhotographerProfileViewProps> = (
                   <Camera className="w-5 h-5 text-[#C88E9B]" />
                   <span>Galeria de Fotos do Estúdio</span>
                 </h2>
-                <span className="text-xs text-[#5A4035]/70">{photographer.gallery.length} Fotos Sem Limites</span>
+                <span className="text-xs text-[#5A4035]/70">
+                  {photographer.gallery.length} foto{photographer.gallery.length === 1 ? '' : 's'} disponível{photographer.gallery.length === 1 ? '' : 'is'} no plano
+                </span>
               </div>
 
               {/* Gallery Filter Category Tabs */}
@@ -356,7 +363,7 @@ export const PhotographerProfileView: React.FC<PhotographerProfileViewProps> = (
                       </ul>
                     </div>
 
-                    <button
+                    {canReceiveLeads && <button
                       onClick={() => onOpenQuote(photographer, pkg)}
                       className={`w-full py-2.5 rounded-xl text-xs font-bold transition-all ${
                         pkg.popular
@@ -365,7 +372,7 @@ export const PhotographerProfileView: React.FC<PhotographerProfileViewProps> = (
                       }`}
                     >
                       Escolher este Pacote
-                    </button>
+                    </button>}
                   </div>
                 ))}
               </div>
@@ -379,12 +386,12 @@ export const PhotographerProfileView: React.FC<PhotographerProfileViewProps> = (
                   <span>Avaliações de Noivos Reais ({reviewsList.length})</span>
                 </h2>
 
-                <button
+                {canReceiveReviews && <button
                   onClick={() => setShowReviewModal(true)}
                   className="px-4 py-2 bg-[#FAF5F0] hover:bg-[#F6EEE8] text-[#5A4035] font-semibold text-xs rounded-xl border border-[#C88E9B]/30"
                 >
                   + Deixar Avaliação
-                </button>
+                </button>}
               </div>
 
               <div className="space-y-4">
@@ -460,47 +467,51 @@ export const PhotographerProfileView: React.FC<PhotographerProfileViewProps> = (
               </div>
 
               <div className="space-y-3">
-                <button
+                {canReceiveLeads && <button
                   onClick={() => onOpenQuote(photographer)}
                   className="w-full py-3.5 bg-gradient-to-r from-[#C88E9B] to-[#b07885] hover:from-[#b07885] hover:to-[#5A4035] text-white font-bold text-sm rounded-2xl shadow-md transition-all flex items-center justify-center gap-2"
                 >
                   <Sparkles className="w-4 h-4 text-[#C7A86A]" />
                   <span>Solicitar Orçamento Online</span>
-                </button>
+                </button>}
 
-                <a
-                  href={`https://wa.me/${photographer.whatsapp}?text=Ol%C3%A1!%20Gostaria%20de%20consultar%20a%20disponibilidade%20para%20meu%20casamento.`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="w-full py-3 bg-[#25D366] hover:bg-[#1ebd59] text-white font-bold text-sm rounded-2xl shadow-sm transition-all flex items-center justify-center gap-2"
-                >
-                  <MessageSquare className="w-4 h-4 fill-white" />
-                  <span>Chamar no WhatsApp</span>
-                </a>
+                {showWhatsApp && (
+                  <a
+                    href={`https://wa.me/${photographer.whatsapp}?text=Ol%C3%A1!%20Gostaria%20de%20consultar%20a%20disponibilidade%20para%20meu%20casamento.`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="w-full py-3 bg-[#25D366] hover:bg-[#1ebd59] text-white font-bold text-sm rounded-2xl shadow-sm transition-all flex items-center justify-center gap-2"
+                  >
+                    <MessageSquare className="w-4 h-4 fill-white" />
+                    <span>Chamar no WhatsApp</span>
+                  </a>
+                )}
               </div>
 
               {/* Direct Info List */}
+              {(showPhone || showSocialLinks || showEmail || showWebsite) && (
               <div className="pt-4 border-t border-[#5A4035]/10 space-y-3 text-xs text-[#5A4035]">
-                <div className="flex items-center gap-2 font-medium">
+                {showPhone && <div className="flex items-center gap-2 font-medium">
                   <Phone className="w-4 h-4 text-[#C88E9B]" />
                   <span>{photographer.phone}</span>
-                </div>
-                <div className="flex items-center gap-2 font-medium">
+                </div>}
+                {showSocialLinks && <div className="flex items-center gap-2 font-medium">
                   <Instagram className="w-4 h-4 text-[#C88E9B]" />
                   <span>{photographer.instagram}</span>
-                </div>
-                <div className="flex items-center gap-2 font-medium">
+                </div>}
+                {showEmail && <div className="flex items-center gap-2 font-medium">
                   <Mail className="w-4 h-4 text-[#C88E9B]" />
                   <span className="truncate">{photographer.email}</span>
-                </div>
-                <div className="flex items-center gap-2 font-medium">
+                </div>}
+                {showWebsite && <div className="flex items-center gap-2 font-medium">
                   <Globe className="w-4 h-4 text-[#C88E9B]" />
                   <span className="truncate">{photographer.website}</span>
-                </div>
+                </div>}
               </div>
+              )}
 
               {/* Security guarantee */}
-              <div className="bg-[#FAF5F0] p-4 rounded-2xl border border-[#C7A86A]/40 text-[11px] text-[#5A4035] space-y-1">
+              {showVerifiedBadge && <div className="bg-[#FAF5F0] p-4 rounded-2xl border border-[#C7A86A]/40 text-[11px] text-[#5A4035] space-y-1">
                 <span className="font-bold text-[#5A4035] flex items-center gap-1">
                   <ShieldCheck className="w-4 h-4 text-[#C7A86A]" />
                   <span>Segurança Guia Fotógrafo Casamento:</span>
@@ -508,7 +519,7 @@ export const PhotographerProfileView: React.FC<PhotographerProfileViewProps> = (
                 <p className="text-[#5A4035]/80">
                   Estúdio auditado e certificado pelo portal com contrato padrão de prestação de serviços.
                 </p>
-              </div>
+              </div>}
 
             </div>
           </div>
