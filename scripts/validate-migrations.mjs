@@ -12,13 +12,20 @@ const migrationSql = fs.readdirSync(path.join(root, 'drizzle'))
 const migrated = [...migrationSql.matchAll(/CREATE TABLE `([^`]+)`/gi)].map((match) => match[1]);
 const missing = expected.filter((table) => !migrated.includes(table));
 const unknown = migrated.filter((table) => !expected.includes(table));
+const identifiers = [...migrationSql.matchAll(/(?:CONSTRAINT|INDEX)\s+`([^`]+)`/gi)]
+  .map((match) => match[1]);
+const oversizedIdentifiers = [...new Set(identifiers.filter((identifier) => identifier.length > 64))];
 
 const result = {
   schemaTables: expected.length,
   migrationTables: migrated.length,
   missing,
   unknown,
-  ready: missing.length === 0 && unknown.length === 0 && new Set(migrated).size === migrated.length,
+  oversizedIdentifiers,
+  ready: missing.length === 0
+    && unknown.length === 0
+    && oversizedIdentifiers.length === 0
+    && new Set(migrated).size === migrated.length,
 };
 
 console.log(JSON.stringify(result, null, 2));
