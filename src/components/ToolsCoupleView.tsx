@@ -31,7 +31,8 @@ import {
   UserCheck,
   Star,
   ExternalLink,
-  Bot
+  Bot,
+  Lock
 } from 'lucide-react';
 import {
   BrideGuest,
@@ -64,6 +65,7 @@ export const ToolsCoupleView: React.FC<ToolsCoupleViewProps> = ({
   const [isSavePromptOpen, setIsSavePromptOpen] = useState<boolean>(false);
   const [dbLoading, setDbLoading] = useState<boolean>(false);
   const [dataError, setDataError] = useState<string>('');
+  const [brideProfile, setBrideProfile] = useState<any>(null);
   // Main Active Tab
   const [activeTab, setActiveTab] = useState<
     | 'dashboard'
@@ -99,16 +101,16 @@ export const ToolsCoupleView: React.FC<ToolsCoupleViewProps> = ({
   const [budgetPercentages, setBudgetPercentages] = useState<{ [key: string]: number }>({});
 
   // Installment simulator input
-  const [supplierQuoteInput, setSupplierQuoteInput] = useState<number>(4500);
+  const [supplierQuoteInput, setSupplierQuoteInput] = useState<number>(0);
 
   // --- SIMULATOR FOR PHOTOGRAPHY LEADS ---
-  const [simCity, setSimCity] = useState('Piracicaba');
-  const [simGuests, setSimGuests] = useState(150);
-  const [simVenue, setSimVenue] = useState('Campo / Fazenda');
+  const [simCity, setSimCity] = useState('');
+  const [simGuests, setSimGuests] = useState(0);
+  const [simVenue, setSimVenue] = useState('');
   const [simHours, setSimHours] = useState('8h');
-  const [simDrone, setSimDrone] = useState(true);
-  const [simAlbum, setSimAlbum] = useState(true);
-  const [simSecondPhoto, setSimSecondPhoto] = useState(true);
+  const [simDrone, setSimDrone] = useState(false);
+  const [simAlbum, setSimAlbum] = useState(false);
+  const [simSecondPhoto, setSimSecondPhoto] = useState(false);
   const [simResult, setSimResult] = useState<{ min: number; max: number } | null>(null);
 
   // --- QUIZ STATE ---
@@ -122,8 +124,14 @@ export const ToolsCoupleView: React.FC<ToolsCoupleViewProps> = ({
   const [siteVenue, setSiteVenue] = useState('');
   const [siteAddress, setSiteAddress] = useState('');
 
+  const isBrideSession = Boolean(userSession && ['bride', 'client'].includes(String(userSession.role).toLowerCase()));
+
   const requireBrideLogin = () => {
-    if (userSession) return true;
+    if (isBrideSession) return true;
+    if (userSession) {
+      setDataError('As ferramentas de planejamento são exclusivas para contas de noiva ou casal.');
+      return false;
+    }
     setIsSavePromptOpen(true);
     return false;
   };
@@ -138,6 +146,7 @@ export const ToolsCoupleView: React.FC<ToolsCoupleViewProps> = ({
   };
 
   useEffect(() => {
+    if (!isBrideSession) return;
     const loadPublicCatalogs = async () => {
       try {
         const [inspirationData, locationData] = await Promise.all([
@@ -174,11 +183,12 @@ export const ToolsCoupleView: React.FC<ToolsCoupleViewProps> = ({
       }
     };
     loadPublicCatalogs();
-  }, []);
+  }, [isBrideSession]);
 
   // Catálogos públicos e dados pessoais são sempre carregados do MySQL.
   useEffect(() => {
-    if (!userSession) {
+    if (!isBrideSession) {
+      setBrideProfile(null);
       setChecklist([]);
       setGuests([]);
       setExpenses([]);
@@ -197,8 +207,16 @@ export const ToolsCoupleView: React.FC<ToolsCoupleViewProps> = ({
         // Profile
         const profRes = await fetch('/api/bride/profile');
         const profData = await profRes.json();
-        if (profData.success && profData.profile?.weddingDate) {
-          setWeddingDate(String(profData.profile.weddingDate).split('T')[0]);
+        if (profData.success && profData.profile) {
+          const profile = profData.profile;
+          setBrideProfile(profile);
+          setWeddingDate(profile.weddingDate ? String(profile.weddingDate).split('T')[0] : '');
+          setSimGuests(Number(profile.estimatedGuests || 0));
+          setTotalBudgetInput(Number(profile.estimatedBudget || 0));
+          setSiteVenue(profile.ceremonyLocation || '');
+          setSiteAddress(profile.receptionLocation || '');
+          setSimCity(profile.cityName || '');
+          setSimVenue(profile.weddingType || '');
         }
 
         // Tasks
@@ -348,6 +366,21 @@ export const ToolsCoupleView: React.FC<ToolsCoupleViewProps> = ({
           const storedAnswers = quizData.quizResult.answersJson;
           setQuizAnswers(Array.isArray(storedAnswers) ? storedAnswers : []);
         }
+        const simulationData = await requestJson('/api/bride/simulations/photography/latest');
+        if (simulationData.simulation) {
+          const simulation = simulationData.simulation;
+          if (simulation.cityName) setSimCity(simulation.cityName);
+          setSimGuests(Number(simulation.guestCount || 0));
+          setSimVenue(simulation.weddingType || '');
+          setSimHours(Number(simulation.coverageHours) >= 24 ? 'Ilimitado' : `${simulation.coverageHours || 8}h`);
+          setSimDrone(Boolean(simulation.includeDrone));
+          setSimAlbum(Boolean(simulation.includeAlbum));
+          setSimSecondPhoto(Boolean(simulation.includeSecondPhotographer));
+          setSimResult({
+            min: Number(simulation.estimatedMinPrice || 0),
+            max: Number(simulation.estimatedMaxPrice || 0),
+          });
+        }
       } catch (err) {
         console.error('Erro ao carregar dados do banco MySQL:', err);
         setDataError(err instanceof Error ? err.message : 'Não foi possível carregar os dados do MySQL.');
@@ -357,7 +390,7 @@ export const ToolsCoupleView: React.FC<ToolsCoupleViewProps> = ({
     };
 
     fetchBrideData();
-  }, [userSession]);
+  }, [isBrideSession, userSession]);
 
   const updateGuests = async (list: BrideGuest[]) => {
     if (!requireBrideLogin()) return;
@@ -466,6 +499,121 @@ export const ToolsCoupleView: React.FC<ToolsCoupleViewProps> = ({
     }
   };
 
+  const saveBrideProfile = async () => {
+    if (!requireBrideLogin()) return;
+    try {
+      const result = await requestJson('/api/bride/profile', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          weddingDate: weddingDate || null,
+          ceremonyLocation: siteVenue || null,
+          receptionLocation: siteAddress || null,
+          estimatedGuests: simGuests || 0,
+          estimatedBudget: totalBudgetInput || 0,
+          weddingType: simVenue || null,
+          cityName: simCity || null,
+        }),
+      });
+      await requestJson('/api/bride/budget', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ totalBudget: totalBudgetInput || 0 }),
+      });
+      setBrideProfile(result.profile || brideProfile);
+      setIsEditModalOpen(false);
+    } catch (err) {
+      setDataError(err instanceof Error ? err.message : 'Erro ao salvar perfil.');
+    }
+  };
+
+  const deleteExpense = async (id: string) => {
+    if (!requireBrideLogin()) return;
+    try {
+      await requestJson(`/api/bride/expenses/${id}`, { method: 'DELETE' });
+      setExpenses((items) => items.filter((item) => item.id !== id));
+    } catch (err) {
+      setDataError(err instanceof Error ? err.message : 'Erro ao excluir gasto.');
+    }
+  };
+
+  const deleteGuest = async (id: string) => {
+    if (!requireBrideLogin()) return;
+    try {
+      await requestJson(`/api/bride/guests/${id}`, { method: 'DELETE' });
+      setGuests((items) => items.filter((item) => item.id !== id));
+    } catch (err) {
+      setDataError(err instanceof Error ? err.message : 'Erro ao excluir convidado.');
+    }
+  };
+
+  const deleteGift = async (id: string) => {
+    if (!requireBrideLogin()) return;
+    try {
+      await requestJson(`/api/bride/gifts/${id}`, { method: 'DELETE' });
+      setGifts((items) => items.filter((item) => item.id !== id));
+    } catch (err) {
+      setDataError(err instanceof Error ? err.message : 'Erro ao excluir presente.');
+    }
+  };
+
+  const saveInstallmentSimulation = async () => {
+    if (!requireBrideLogin()) return;
+    if (supplierQuoteInput <= 0) {
+      setDataError('Informe um valor de contrato maior que zero.');
+      return;
+    }
+    const description = prompt('Descrição da simulação:', 'Contrato de fornecedor');
+    const installments = Number(prompt('Quantidade de parcelas:', '12') || '0');
+    if (!description || installments <= 0) return;
+    try {
+      await requestJson('/api/bride/simulations/installments', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ description, totalAmount: supplierQuoteInput, installments, interestRate: 0 }),
+      });
+      alert('Simulação salva no seu planejamento.');
+    } catch (err) {
+      setDataError(err instanceof Error ? err.message : 'Erro ao salvar simulação.');
+    }
+  };
+
+  const addTimelineItem = async () => {
+    if (!requireBrideLogin()) return;
+    const time = prompt('Horário (HH:MM):', '09:00');
+    const title = prompt('Título do compromisso:');
+    if (!time || !title) return;
+    const description = prompt('Descrição (opcional):', '') || '';
+    try {
+      const result = await requestJson('/api/bride/timeline/item', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ time, title, description }),
+      });
+      setTimelineItems((items) => [
+        ...items,
+        {
+          id: String(result.item.id),
+          time: result.item.time,
+          title: result.item.title,
+          desc: result.item.description || '',
+        },
+      ].sort((a, b) => a.time.localeCompare(b.time)));
+    } catch (err) {
+      setDataError(err instanceof Error ? err.message : 'Erro ao salvar item do cronograma.');
+    }
+  };
+
+  const deleteTimelineItem = async (id: string) => {
+    if (!requireBrideLogin()) return;
+    try {
+      await requestJson(`/api/bride/timeline/item/${id}`, { method: 'DELETE' });
+      setTimelineItems((items) => items.filter((item) => item.id !== id));
+    } catch (err) {
+      setDataError(err instanceof Error ? err.message : 'Erro ao excluir item do cronograma.');
+    }
+  };
+
   const saveWeddingWebsite = async () => {
     if (!requireBrideLogin()) return;
     try {
@@ -500,6 +648,21 @@ export const ToolsCoupleView: React.FC<ToolsCoupleViewProps> = ({
 
   const completedTasksCount = checklist.filter((c) => c.completed).length;
   const checklistProgressPercent = Math.round((completedTasksCount / (checklist.length || 1)) * 100);
+  const profileCompletionFields = [
+    brideProfile?.partnerName,
+    weddingDate,
+    brideProfile?.cityId || simCity,
+    simGuests > 0,
+    totalBudgetInput > 0,
+    siteVenue,
+    brideProfile?.weddingStyle,
+  ];
+  const profileCompletionPercent = Math.round(
+    (profileCompletionFields.filter(Boolean).length / profileCompletionFields.length) * 100
+  );
+  const formattedWeddingDate = weddingDate
+    ? new Date(`${weddingDate}T12:00:00`).toLocaleDateString('pt-BR')
+    : 'Ainda não informada';
 
   // Financial calculations
   const totalExpensesContracted = expenses.reduce((acc, curr) => acc + (curr.amount || 0), 0);
@@ -528,6 +691,58 @@ export const ToolsCoupleView: React.FC<ToolsCoupleViewProps> = ({
       );
     } catch (err) {
       setDataError(err instanceof Error ? err.message : 'Erro ao atualizar tarefa.');
+    }
+  };
+
+  const addChecklistTask = async () => {
+    if (!requireBrideLogin()) return;
+    const title = prompt('Nova tarefa:');
+    if (!title) return;
+    const timeframe = prompt('Prazo ou período (opcional):', 'Personalizado') || 'Personalizado';
+    try {
+      const result = await requestJson('/api/bride/tasks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title, category: 'Personalizado', recommendedMonth: timeframe }),
+      });
+      setChecklist((items) => [
+        ...items,
+        {
+          id: String(result.task.id),
+          task: result.task.title,
+          category: result.task.category || 'Personalizado',
+          timeframe: result.task.recommendedMonth || 'Personalizado',
+          completed: false,
+        } as ChecklistItem,
+      ]);
+    } catch (err) {
+      setDataError(err instanceof Error ? err.message : 'Erro ao salvar tarefa.');
+    }
+  };
+
+  const deleteChecklistTask = async (id: string) => {
+    if (!requireBrideLogin()) return;
+    try {
+      await requestJson(`/api/bride/tasks/${id}`, { method: 'DELETE' });
+      setChecklist((items) => items.filter((item) => item.id !== id));
+    } catch (err) {
+      setDataError(err instanceof Error ? err.message : 'Erro ao excluir tarefa.');
+    }
+  };
+
+  const updateGuestStatus = async (guest: BrideGuest, status: BrideGuest['status']) => {
+    if (!requireBrideLogin()) return;
+    try {
+      await requestJson(`/api/bride/guests/${guest.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          confirmationStatus: status === 'confirmado' ? 'confirmed' : status === 'recusado' ? 'declined' : 'pending',
+        }),
+      });
+      setGuests((items) => items.map((item) => item.id === guest.id ? { ...item, status } : item));
+    } catch (err) {
+      setDataError(err instanceof Error ? err.message : 'Erro ao atualizar confirmação.');
     }
   };
 
@@ -568,8 +783,13 @@ export const ToolsCoupleView: React.FC<ToolsCoupleViewProps> = ({
   };
 
   // Run Simulator
-  const handleRunSimulator = (e: React.FormEvent) => {
+  const handleRunSimulator = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!requireBrideLogin()) return;
+    if (!simCity.trim() || simGuests <= 0 || !simVenue) {
+      setDataError('Informe cidade, convidados e tipo de casamento para calcular.');
+      return;
+    }
     let base = 3000;
     if (simGuests > 200) base += 1000;
     if (simVenue.includes('Fazenda')) base += 800;
@@ -578,10 +798,30 @@ export const ToolsCoupleView: React.FC<ToolsCoupleViewProps> = ({
     if (simAlbum) base += 1200;
     if (simSecondPhoto) base += 1000;
 
-    setSimResult({
+    const nextResult = {
       min: Math.round(base * 0.9),
       max: Math.round(base * 1.25),
-    });
+    };
+    setSimResult(nextResult);
+    try {
+      await requestJson('/api/bride/simulations/photography', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          city: simCity,
+          guestCount: simGuests,
+          weddingType: simVenue,
+          coverageHours: simHours,
+          includeDrone: simDrone,
+          includeAlbum: simAlbum,
+          includeSecondPhotographer: simSecondPhoto,
+          estimatedMinPrice: nextResult.min,
+          estimatedMaxPrice: nextResult.max,
+        }),
+      });
+    } catch (err) {
+      setDataError(err instanceof Error ? err.message : 'Erro ao salvar a simulação.');
+    }
   };
 
   // Quiz Questions
@@ -651,6 +891,75 @@ export const ToolsCoupleView: React.FC<ToolsCoupleViewProps> = ({
     }
   };
 
+  if (!isBrideSession) {
+    const tools = [
+      { icon: CheckSquare, title: 'Checklist de planejamento', text: 'Organize tarefas e acompanhe o progresso real do casamento.' },
+      { icon: CalendarIcon, title: 'Agenda e lembretes', text: 'Cadastre compromissos, datas importantes e notificações.' },
+      { icon: DollarSign, title: 'Orçamento e despesas', text: 'Planeje o orçamento, fornecedores, pagamentos e vencimentos.' },
+      { icon: Users, title: 'Lista de convidados', text: 'Controle acompanhantes, mesas e confirmações de presença.' },
+      { icon: Gift, title: 'Lista de presentes', text: 'Monte e acompanhe sua lista de presentes em um só lugar.' },
+      { icon: Camera, title: 'Inspirações e locais', text: 'Salve referências e encontre cenários para o ensaio.' },
+      { icon: Calculator, title: 'Simulador de fotografia', text: 'Calcule uma faixa de investimento usando os dados do evento.' },
+      { icon: Clock, title: 'Cronograma do grande dia', text: 'Crie a programação que será compartilhada com fornecedores.' },
+      { icon: Globe, title: 'Site do casal', text: 'Publique história, locais e RSVP em uma página do casamento.' },
+      { icon: Heart, title: 'Quiz de estilo', text: 'Descubra e salve o estilo que combina com o casal.' },
+    ];
+    return (
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 space-y-10">
+        <section className="rounded-3xl bg-gradient-to-br from-[#5A4035] to-[#76584b] text-white p-7 sm:p-12 shadow-xl">
+          <div className="max-w-3xl space-y-5">
+            <span className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3 py-1 text-xs font-bold text-[#E7C98A]">
+              <Sparkles className="h-4 w-4" /> Portal gratuito da noiva e do casal
+            </span>
+            <h1 className="text-3xl sm:text-5xl font-serif font-bold">Planeje seu casamento com todos os dados em um só lugar</h1>
+            <p className="text-sm sm:text-base leading-relaxed text-white/85">
+              Para acessar as ferramentas, crie seu cadastro gratuito. A data e o local do casamento,
+              número de convidados e orçamento são importantes para calcular prazos, criar lembretes
+              relevantes e personalizar as estimativas usadas no planejamento.
+            </p>
+            <div className="flex flex-col sm:flex-row gap-3 pt-2">
+              {!userSession && (
+                <button
+                  onClick={onNavigateRegister}
+                  className="rounded-xl bg-[#C88E9B] px-6 py-3 text-sm font-bold text-white shadow-md hover:bg-[#b07885]"
+                >
+                  Criar cadastro gratuito
+                </button>
+              )}
+              <button
+                onClick={onNavigateLogin}
+                className="rounded-xl border border-white/25 bg-white/10 px-6 py-3 text-sm font-bold text-white hover:bg-white/15"
+              >
+                {userSession ? 'Entrar com uma conta de casal' : 'Já tenho cadastro'}
+              </button>
+            </div>
+            <p className="flex items-center gap-2 text-xs text-white/70">
+              <Lock className="h-4 w-4" /> Seus dados pessoais e seu planejamento ficam vinculados à sua conta no banco MySQL.
+            </p>
+          </div>
+        </section>
+
+        <section className="space-y-5">
+          <div>
+            <h2 className="text-2xl font-serif font-bold text-[#5A4035]">Ferramentas disponíveis após o cadastro</h2>
+            <p className="mt-1 text-sm text-stone-600">Nada é preenchido com informações fictícias: o painel começa com os dados informados por você.</p>
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {tools.map(({ icon: Icon, title, text }) => (
+              <article key={title} className="rounded-2xl border border-stone-200 bg-white p-5 shadow-xs">
+                <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-xl bg-[#FAF0F2] text-[#C88E9B]">
+                  <Icon className="h-5 w-5" />
+                </div>
+                <h3 className="font-bold text-[#5A4035]">{title}</h3>
+                <p className="mt-1 text-xs leading-relaxed text-stone-600">{text}</p>
+              </article>
+            ))}
+          </div>
+        </section>
+      </div>
+    );
+  }
+
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
       {dataError && (
@@ -681,7 +990,7 @@ export const ToolsCoupleView: React.FC<ToolsCoupleViewProps> = ({
           <div className="bg-white/10 backdrop-blur-md p-4 rounded-2xl border border-white/20 shrink-0 text-center space-y-1">
             <span className="text-[10px] uppercase tracking-wider font-bold text-[#C7A86A]">Contagem Regressiva</span>
             <div className="text-3xl font-serif font-bold text-white">
-              {daysRemaining} <span className="text-sm font-sans font-normal text-white/80">Dias</span>
+              {weddingDate ? daysRemaining : '—'} <span className="text-sm font-sans font-normal text-white/80">Dias</span>
             </div>
             <span className="text-[10px] text-emerald-300 font-semibold block">
               {checklistProgressPercent}% do Planejamento Concluído
@@ -736,10 +1045,12 @@ export const ToolsCoupleView: React.FC<ToolsCoupleViewProps> = ({
           <div className="bg-gradient-to-r from-rose-50 via-amber-50/50 to-white p-5 rounded-3xl border border-[#C88E9B]/30 shadow-xs flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
             <div className="flex items-center gap-4">
               <div className="w-12 h-12 bg-[#C88E9B] text-white rounded-2xl flex items-center justify-center font-bold text-lg shrink-0 shadow-sm">
-                45%
+                {profileCompletionPercent}%
               </div>
               <div>
-                <h3 className="font-serif font-bold text-[#5A4035] text-base">Complete o Perfil do seu Casamento</h3>
+                <h3 className="font-serif font-bold text-[#5A4035] text-base">
+                  {profileCompletionPercent === 100 ? 'Perfil do casamento completo' : 'Complete o Perfil do seu Casamento'}
+                </h3>
                 <p className="text-xs text-stone-600">
                   Adicione o local exato, número de convidados e teto de orçamento para receber estimativas e propostas precisas dos estúdios.
                 </p>
@@ -762,7 +1073,7 @@ export const ToolsCoupleView: React.FC<ToolsCoupleViewProps> = ({
                 <Heart className="w-4 h-4 fill-[#C88E9B]" />
               </div>
               <div className="text-2xl font-serif font-bold text-[#5A4035]">{daysRemaining} Dias</div>
-              <span className="text-[10px] text-stone-400 block">Data: 15 de Novembro de 2026</span>
+              <span className="text-[10px] text-stone-400 block">Data: {formattedWeddingDate}</span>
             </div>
 
             <div className="bg-white p-5 rounded-2xl border border-stone-200 shadow-xs space-y-1">
@@ -789,11 +1100,11 @@ export const ToolsCoupleView: React.FC<ToolsCoupleViewProps> = ({
 
             <div className="bg-white p-5 rounded-2xl border border-stone-200 shadow-xs space-y-1">
               <div className="flex items-center justify-between text-amber-600">
-                <span className="text-xs font-bold uppercase tracking-wider text-stone-500">Previsão do Tempo</span>
-                <CloudSun className="w-4 h-4 text-amber-500" />
+                <span className="text-xs font-bold uppercase tracking-wider text-stone-500">Convidados Cadastrados</span>
+                <Users className="w-4 h-4 text-amber-500" />
               </div>
-              <div className="text-xl font-serif font-bold text-[#5A4035]">26°C Sol & Céu Limpo</div>
-              <span className="text-[10px] text-emerald-600 font-semibold block">Clima Ideal para Cerimônia Externa</span>
+              <div className="text-xl font-serif font-bold text-[#5A4035]">{totalGuestsCount}</div>
+              <span className="text-[10px] text-stone-400 font-semibold block">{confirmedGuestsCount} confirmados</span>
             </div>
           </div>
 
@@ -882,37 +1193,25 @@ export const ToolsCoupleView: React.FC<ToolsCoupleViewProps> = ({
               </div>
               <div className="space-y-3 text-xs">
                 <div className="p-3 bg-[#FAF5F0] rounded-xl border border-stone-200 flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-full bg-[#C88E9B] text-white flex items-center justify-center font-bold font-serif">
-                    LP
-                  </div>
-                  <div className="flex-1">
-                    <div className="flex items-center justify-between">
-                      <span className="font-bold text-[#5A4035]">Estúdio Lucas Perez</span>
-                      <span className="text-[10px] text-emerald-600 font-bold">Proposta Enviada</span>
-                    </div>
-                    <p className="text-stone-500 text-[11px] line-clamp-1">Olá Camila! Temos a data 15/11/2026 livre para cobertura com drone inclusa...</p>
-                  </div>
+                  <MessageSquare className="w-8 h-8 text-stone-300" />
+                  <p className="text-stone-500">
+                    As respostas reais dos fotógrafos aparecerão aqui depois que você solicitar uma cotação.
+                  </p>
                 </div>
               </div>
             </div>
 
             <div className="bg-[#5A4035] text-white rounded-3xl p-6 space-y-4 shadow-md">
-              <span className="text-xs font-bold text-[#C7A86A] uppercase tracking-wider">Últimos Fotógrafos Visitados</span>
-              <div className="flex items-center gap-3 bg-white/10 p-3 rounded-2xl border border-white/15">
-                <img
-                  src={photographers[0]?.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=300'}
-                  alt="Fotógrafo"
-                  className="w-12 h-12 rounded-xl object-cover shrink-0"
-                />
-                <div className="flex-1">
-                  <h4 className="font-serif font-bold text-sm text-white">{photographers[0]?.studioName || 'Lucas Perez Fotografia'}</h4>
-                  <span className="text-[10px] text-white/80 block">{photographers[0]?.city} • {photographers[0]?.styles?.join(', ')}</span>
-                </div>
+              <span className="text-xs font-bold text-[#C7A86A] uppercase tracking-wider">Encontre seu fotógrafo</span>
+              <div className="space-y-3 bg-white/10 p-4 rounded-2xl border border-white/15">
+                <p className="text-xs text-white/80">
+                  Selecione a cidade e compare somente profissionais cadastrados e disponíveis na região.
+                </p>
                 <button
-                  onClick={() => window.location.href = `/fotografo/${photographers[0]?.slug || 'fotografo-perez'}`}
-                  className="px-3 py-1.5 bg-[#C7A86A] text-[#5A4035] rounded-xl font-bold text-xs cursor-pointer"
+                  onClick={openMultiQuote}
+                  className="px-4 py-2 bg-[#C7A86A] text-[#5A4035] rounded-xl font-bold text-xs cursor-pointer"
                 >
-                  Ver Perfil
+                  Solicitar cotação
                 </button>
               </div>
             </div>
@@ -935,11 +1234,18 @@ export const ToolsCoupleView: React.FC<ToolsCoupleViewProps> = ({
               </div>
 
               <div className="flex items-center gap-3">
+                <button
+                  onClick={addChecklistTask}
+                  className="rounded-xl bg-[#C88E9B] px-3 py-2 text-xs font-bold text-white"
+                >
+                  + Nova tarefa
+                </button>
                 <span className="text-xs font-bold text-[#5A4035]">Data do Casamento:</span>
                 <input
                   type="date"
                   value={weddingDate}
                   onChange={(e) => setWeddingDate(e.target.value)}
+                  onBlur={saveBrideProfile}
                   className="p-2 bg-stone-50 border border-stone-200 rounded-xl text-xs font-bold text-[#5A4035]"
                 />
               </div>
@@ -969,9 +1275,18 @@ export const ToolsCoupleView: React.FC<ToolsCoupleViewProps> = ({
                     </div>
                   </div>
 
-                  <span className="text-xs font-bold px-3 py-1 bg-stone-100 text-stone-700 rounded-full shrink-0">
-                    {item.timeframe}
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold px-3 py-1 bg-stone-100 text-stone-700 rounded-full shrink-0">
+                      {item.timeframe}
+                    </span>
+                    <button
+                      onClick={() => deleteChecklistTask(item.id)}
+                      aria-label="Excluir tarefa"
+                      className="p-2 text-rose-500 hover:bg-rose-50 rounded-lg"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>
@@ -1160,6 +1475,7 @@ export const ToolsCoupleView: React.FC<ToolsCoupleViewProps> = ({
                     <th className="py-3 px-3">Valor Pago</th>
                     <th className="py-3 px-3">Falta Pagar</th>
                     <th className="py-3 px-3">Vencimento</th>
+                    <th className="py-3 px-3">Ações</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-stone-100 font-medium text-[#5A4035]">
@@ -1173,6 +1489,11 @@ export const ToolsCoupleView: React.FC<ToolsCoupleViewProps> = ({
                         R$ {(exp.amount - exp.paidAmount).toLocaleString('pt-BR')}
                       </td>
                       <td className="py-3 px-3 text-stone-500">{exp.dueDate}</td>
+                      <td className="py-3 px-3">
+                        <button onClick={() => deleteExpense(exp.id)} className="text-rose-600 hover:underline font-bold">
+                          Excluir
+                        </button>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -1203,6 +1524,12 @@ export const ToolsCoupleView: React.FC<ToolsCoupleViewProps> = ({
                 </div>
               ))}
             </div>
+            <button
+              onClick={saveInstallmentSimulation}
+              className="rounded-xl bg-[#C7A86A] px-5 py-2.5 text-xs font-bold text-[#5A4035]"
+            >
+              Salvar esta simulação
+            </button>
           </div>
         </div>
       )}
@@ -1271,6 +1598,7 @@ export const ToolsCoupleView: React.FC<ToolsCoupleViewProps> = ({
                     <th className="py-3 px-3">Acompanhantes</th>
                     <th className="py-3 px-3">Mesa</th>
                     <th className="py-3 px-3">Status Confirmado</th>
+                    <th className="py-3 px-3">Ações</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-stone-100 font-medium text-[#5A4035]">
@@ -1282,8 +1610,10 @@ export const ToolsCoupleView: React.FC<ToolsCoupleViewProps> = ({
                       <td className="py-3 px-3">+{g.companionCount} pessoas</td>
                       <td className="py-3 px-3 font-bold">{g.tableNumber}</td>
                       <td className="py-3 px-3">
-                        <span
-                          className={`px-2.5 py-1 rounded-full text-[10px] font-bold capitalize ${
+                        <select
+                          value={g.status}
+                          onChange={(e) => updateGuestStatus(g, e.target.value as BrideGuest['status'])}
+                          className={`px-2.5 py-1 rounded-full text-[10px] font-bold capitalize border-0 ${
                             g.status === 'confirmado'
                               ? 'bg-emerald-100 text-emerald-800'
                               : g.status === 'pendente'
@@ -1291,8 +1621,15 @@ export const ToolsCoupleView: React.FC<ToolsCoupleViewProps> = ({
                               : 'bg-rose-100 text-rose-800'
                           }`}
                         >
-                          {g.status}
-                        </span>
+                          <option value="pendente">Pendente</option>
+                          <option value="confirmado">Confirmado</option>
+                          <option value="recusado">Recusado</option>
+                        </select>
+                      </td>
+                      <td className="py-3 px-3">
+                        <button onClick={() => deleteGuest(g.id)} className="text-rose-600 hover:underline font-bold">
+                          Excluir
+                        </button>
                       </td>
                     </tr>
                   ))}
@@ -1318,7 +1655,7 @@ export const ToolsCoupleView: React.FC<ToolsCoupleViewProps> = ({
               <button
                 onClick={() => {
                   const title = prompt('Nome do presente:');
-                  const value = Number(prompt('Valor aproximado (R$):') || '200');
+                  const value = Number(prompt('Valor aproximado (R$):') || '0');
                   if (title) {
                     const newG: BrideGift = {
                       id: String(Date.now()),
@@ -1357,6 +1694,9 @@ export const ToolsCoupleView: React.FC<ToolsCoupleViewProps> = ({
                     ) : (
                       <span className="text-stone-400 font-semibold text-[10px]">Disponível para presente</span>
                     )}
+                    <button onClick={() => deleteGift(gift.id)} className="text-rose-600 hover:underline font-bold">
+                      Excluir
+                    </button>
                   </div>
                 </div>
               ))}
@@ -1471,6 +1811,7 @@ export const ToolsCoupleView: React.FC<ToolsCoupleViewProps> = ({
                   onChange={(e) => setSimVenue(e.target.value)}
                   className="w-full p-3 bg-stone-50 border border-stone-200 rounded-xl font-bold"
                 >
+                  <option value="">Selecione o tipo</option>
                   <option value="Campo / Fazenda">Campo / Fazenda</option>
                   <option value="Praia">Praia</option>
                   <option value="Igreja & Salão">Igreja & Salão Tradicional</option>
@@ -1552,12 +1893,20 @@ export const ToolsCoupleView: React.FC<ToolsCoupleViewProps> = ({
                 <p className="text-xs text-stone-500">Linha do tempo gerada automaticamente para alinhar com o cerimonial e equipe de fotografia</p>
               </div>
 
-              <button
-                onClick={() => window.print()}
-                className="px-4 py-2 bg-stone-100 text-stone-700 hover:bg-stone-200 rounded-xl text-xs font-bold flex items-center gap-2 cursor-pointer"
-              >
-                <Download className="w-4 h-4" /> Imprimir Cronograma
-              </button>
+              <div className="flex gap-2">
+                <button
+                  onClick={addTimelineItem}
+                  className="px-4 py-2 bg-[#C88E9B] text-white rounded-xl text-xs font-bold flex items-center gap-2 cursor-pointer"
+                >
+                  <Plus className="w-4 h-4" /> Adicionar horário
+                </button>
+                <button
+                  onClick={() => window.print()}
+                  className="px-4 py-2 bg-stone-100 text-stone-700 hover:bg-stone-200 rounded-xl text-xs font-bold flex items-center gap-2 cursor-pointer"
+                >
+                  <Download className="w-4 h-4" /> Imprimir
+                </button>
+              </div>
             </div>
 
             <div className="space-y-4">
@@ -1566,12 +1915,24 @@ export const ToolsCoupleView: React.FC<ToolsCoupleViewProps> = ({
                   <div className="p-3 bg-[#C88E9B] text-white rounded-xl font-serif font-bold text-sm shrink-0">
                     {item.time}
                   </div>
-                  <div>
+                  <div className="flex-1">
                     <h3 className="font-serif font-bold text-base text-[#5A4035]">{item.title}</h3>
                     <p className="text-xs text-stone-600 mt-1">{item.desc}</p>
                   </div>
+                  <button
+                    onClick={() => deleteTimelineItem(item.id)}
+                    aria-label="Excluir item"
+                    className="p-2 text-rose-500 hover:bg-rose-50 rounded-lg"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
                 </div>
               ))}
+              {timelineItems.length === 0 && (
+                <div className="rounded-2xl border border-dashed border-stone-300 p-8 text-center text-sm text-stone-500">
+                  Seu cronograma está vazio. Adicione somente os horários reais do seu casamento.
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -1803,6 +2164,17 @@ export const ToolsCoupleView: React.FC<ToolsCoupleViewProps> = ({
               </div>
 
               <div>
+                <label className="block font-bold text-[#5A4035] mb-1">Cidade do Casamento:</label>
+                <input
+                  type="text"
+                  value={simCity}
+                  onChange={(e) => setSimCity(e.target.value)}
+                  placeholder="Ex: Piracicaba"
+                  className="w-full p-2.5 bg-[#FAF5F0] border border-[#5A4035]/20 rounded-xl"
+                />
+              </div>
+
+              <div>
                 <label className="block font-bold text-[#5A4035] mb-1">Local / Cidade da Cerimônia:</label>
                 <input
                   type="text"
@@ -1844,19 +2216,7 @@ export const ToolsCoupleView: React.FC<ToolsCoupleViewProps> = ({
                 Cancelar
               </button>
               <button
-                onClick={() => {
-                  if (requireBrideLogin()) {
-                    requestJson('/api/bride/profile', {
-                      method: 'PUT',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ weddingDate, ceremonyLocation: siteVenue })
-                    })
-                      .then(() => setIsEditModalOpen(false))
-                      .catch((err) =>
-                        setDataError(err instanceof Error ? err.message : 'Erro ao salvar perfil.')
-                      );
-                  }
-                }}
+                onClick={saveBrideProfile}
                 className="px-6 py-2 bg-[#C88E9B] hover:bg-[#b07582] text-white font-bold text-xs rounded-xl shadow-xs transition-all"
               >
                 Salvar Perfil

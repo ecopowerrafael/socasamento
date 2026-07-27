@@ -20,17 +20,17 @@ export const BrideSignupView: React.FC<BrideSignupViewProps> = ({
   const [phone, setPhone] = useState('');
   const [partnerName, setPartnerName] = useState('');
   const [weddingDate, setWeddingDate] = useState('');
-  const [uf, setUf] = useState('SP');
-  const [cityName, setCityName] = useState('Piracicaba');
+  const [uf, setUf] = useState('');
+  const [cityName, setCityName] = useState('');
   const [termsAccepted, setTermsAccepted] = useState(false);
   const [privacyConsent, setPrivacyConsent] = useState(false);
-  const [marketingConsent, setMarketingConsent] = useState(true);
+  const [marketingConsent, setMarketingConsent] = useState(false);
 
   // Optional fields
-  const [weddingType, setWeddingType] = useState('Religioso e Recepção');
-  const [estimatedGuests, setEstimatedGuests] = useState('150');
-  const [estimatedBudget, setEstimatedBudget] = useState('80000');
-  const [weddingStyle, setWeddingStyle] = useState('Clássico / Elegante');
+  const [weddingType, setWeddingType] = useState('');
+  const [estimatedGuests, setEstimatedGuests] = useState('');
+  const [estimatedBudget, setEstimatedBudget] = useState('');
+  const [weddingStyle, setWeddingStyle] = useState('');
   const [ceremonyLocation, setCeremonyLocation] = useState('');
   const [receptionLocation, setReceptionLocation] = useState('');
 
@@ -272,19 +272,39 @@ export const BrideSignupView: React.FC<BrideSignupViewProps> = ({
                     Estado (UF) *
                   </label>
                   <select
+                    required
                     value={uf}
                     onChange={(e) => setUf(e.target.value)}
                     className="w-full px-3 py-2 text-sm rounded-xl border border-[#E8DFD8] focus:ring-2 focus:ring-[#C88E9B] outline-none"
                   >
-                    <option value="SP">São Paulo (SP)</option>
+                    <option value="">Selecione</option>
+                    <option value="AC">Acre (AC)</option>
+                    <option value="AL">Alagoas (AL)</option>
+                    <option value="AP">Amapá (AP)</option>
+                    <option value="AM">Amazonas (AM)</option>
+                    <option value="BA">Bahia (BA)</option>
+                    <option value="CE">Ceará (CE)</option>
+                    <option value="DF">Distrito Federal (DF)</option>
+                    <option value="ES">Espírito Santo (ES)</option>
+                    <option value="GO">Goiás (GO)</option>
+                    <option value="MA">Maranhão (MA)</option>
+                    <option value="MT">Mato Grosso (MT)</option>
+                    <option value="MS">Mato Grosso do Sul (MS)</option>
                     <option value="RJ">Rio de Janeiro (RJ)</option>
                     <option value="MG">Minas Gerais (MG)</option>
+                    <option value="PA">Pará (PA)</option>
+                    <option value="PB">Paraíba (PB)</option>
                     <option value="PR">Paraná (PR)</option>
+                    <option value="PE">Pernambuco (PE)</option>
+                    <option value="PI">Piauí (PI)</option>
+                    <option value="RN">Rio Grande do Norte (RN)</option>
                     <option value="SC">Santa Catarina (SC)</option>
                     <option value="RS">Rio Grande do Sul (RS)</option>
-                    <option value="BA">Bahia (BA)</option>
-                    <option value="PE">Pernambuco (PE)</option>
-                    <option value="DF">Distrito Federal (DF)</option>
+                    <option value="RO">Rondônia (RO)</option>
+                    <option value="RR">Roraima (RR)</option>
+                    <option value="SP">São Paulo (SP)</option>
+                    <option value="SE">Sergipe (SE)</option>
+                    <option value="TO">Tocantins (TO)</option>
                   </select>
                 </div>
 
@@ -306,7 +326,18 @@ export const BrideSignupView: React.FC<BrideSignupViewProps> = ({
               <div className="pt-4">
                 <button
                   type="button"
-                  onClick={() => setStep(2)}
+                  onClick={() => {
+                    setErrorMessage('');
+                    if (!name || !partnerName || !email || !phone || !password || !confirmPassword || !weddingDate || !uf || !cityName) {
+                      setErrorMessage('Preencha todos os dados obrigatórios antes de continuar.');
+                      return;
+                    }
+                    if (password.length < 6 || password !== confirmPassword) {
+                      setErrorMessage(password.length < 6 ? 'A senha deve ter pelo menos 6 caracteres.' : 'As senhas não coincidem.');
+                      return;
+                    }
+                    setStep(2);
+                  }}
                   className="w-full py-3 bg-[#C88E9B] hover:bg-[#B57A87] text-white font-semibold rounded-xl transition shadow-md flex items-center justify-center space-x-2"
                 >
                   <span>Próximo Passo: Detalhes do Casamento</span>
@@ -328,6 +359,7 @@ export const BrideSignupView: React.FC<BrideSignupViewProps> = ({
                     onChange={(e) => setWeddingStyle(e.target.value)}
                     className="w-full px-3 py-2 text-sm rounded-xl border border-[#E8DFD8] focus:ring-2 focus:ring-[#C88E9B] outline-none"
                   >
+                    <option value="">Ainda não defini</option>
                     <option value="Clássico / Elegante">Clássico / Elegante</option>
                     <option value="Rústico / Campo / Fazenda">Rústico / Campo / Fazenda</option>
                     <option value="Praia / Tropical">Praia / Tropical</option>

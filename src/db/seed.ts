@@ -51,6 +51,7 @@ export async function seedDatabase() {
   console.log('Starting MySQL Database Seed...');
 
   try {
+    const seedDemoData = process.env.SEED_DEMO_DATA === 'true';
     // 1. Seed Super Admin & Admin Users.
     // Store only one-way hashes in source control and also repair accounts
     // created by older seeds with outdated credentials.
@@ -110,8 +111,10 @@ export async function seedDatabase() {
       });
     }
 
-    let brideUser = (await db.select().from(users).where(eq(users.uid, 'client-demo-uid-camila')).limit(1))[0];
-    if (!brideUser) {
+    let brideUser = seedDemoData
+      ? (await db.select().from(users).where(eq(users.uid, 'client-demo-uid-camila')).limit(1))[0]
+      : null;
+    if (seedDemoData && !brideUser) {
       const [createdBride] = await db.insert(users).values({
         uid: 'client-demo-uid-camila',
         name: 'Camila Silva',
@@ -468,7 +471,7 @@ export async function seedDatabase() {
       }
     }
 
-    if (!brideUser) throw new Error('Não foi possível criar o usuário de demonstração da noiva.');
+    if (brideUser) {
     const brideId = brideUser.id;
 
     // 8. Seed complete bride portal examples, once, in MySQL
@@ -674,6 +677,7 @@ export async function seedDatabase() {
         message: 'Olá! Gostaria de um orçamento detalhado para nosso casamento em Piracicaba.',
         status: 'Novo',
       });
+    }
     }
 
     // 9. Seed Commercial Subscription Plans

@@ -24,6 +24,8 @@ import {
   achievements,
   userAchievements,
   photographers,
+  cities,
+  states,
 } from '../db/schema.ts';
 import { eq, and, asc, desc, sql, isNull } from 'drizzle-orm';
 import { requireAuth, AuthRequest } from '../middleware/auth.ts';
@@ -37,6 +39,28 @@ function getUserId(req: AuthRequest): number {
   }
   return Number(req.user.id);
 }
+
+function calculateProfileCompletion(profile: any): number {
+  if (!profile) return 0;
+  const fields = [
+    profile.partnerName,
+    profile.weddingDate,
+    profile.cityId || profile.cityName,
+    Number(profile.estimatedGuests || 0) > 0,
+    Number(profile.estimatedBudget || 0) > 0,
+    profile.ceremonyLocation,
+    profile.weddingStyle,
+  ];
+  return Math.round((fields.filter(Boolean).length / fields.length) * 100);
+}
+
+router.use(requireAuth, (req: AuthRequest, res, next) => {
+  const role = String(req.user?.role || '').toLowerCase();
+  if (!['bride', 'client'].includes(role)) {
+    return res.status(403).json({ success: false, error: 'Área exclusiva para contas de noiva ou casal.' });
+  }
+  next();
+});
 
 // ============================================================================
 // 1. PROFILE & ONBOARDING
@@ -52,6 +76,19 @@ router.get('/profile', requireAuth, async (req: AuthRequest, res) => {
     const profs = await db.select().from(coupleProfiles).where(eq(coupleProfiles.userId, userId));
     const profile = profs[0] || null;
 
+    let location: { cityName?: string; stateUf?: string } = {
+      cityName: profile?.cityName || undefined,
+      stateUf: profile?.stateUf || undefined,
+    };
+    if (profile?.cityId) {
+      const cityRows = await db.select().from(cities).where(eq(cities.id, profile.cityId)).limit(1);
+      if (cityRows[0]) location.cityName = cityRows[0].name;
+    }
+    if (profile?.stateId) {
+      const stateRows = await db.select().from(states).where(eq(states.id, profile.stateId)).limit(1);
+      if (stateRows[0]) location.stateUf = stateRows[0].uf;
+    }
+
     return res.json({
       success: true,
       user: {
@@ -61,7 +98,7 @@ router.get('/profile', requireAuth, async (req: AuthRequest, res) => {
         phone: userList[0].phone,
         avatar: userList[0].avatar,
       },
-      profile,
+      profile: profile ? { ...profile, ...location, planningProgress: calculateProfileCompletion(profile) } : null,
     });
   } catch (err: any) {
     return res.status(500).json({ success: false, error: err.message });
@@ -85,6 +122,8 @@ router.put('/profile', requireAuth, async (req: AuthRequest, res) => {
       receptionLocation,
       stateId,
       cityId,
+      stateUf,
+      cityName,
       couplePhoto,
     } = req.body;
 
@@ -102,16 +141,18 @@ router.put('/profile', requireAuth, async (req: AuthRequest, res) => {
     if (profs.length === 0) {
       await db.insert(coupleProfiles).values({
         userId,
-        partnerName: partnerName || 'Parceiro(a)',
+        partnerName: partnerName || null,
         weddingDate: weddingDate || null,
-        weddingType: weddingType || 'Tradicional',
-        estimatedGuests: estimatedGuests ? Number(estimatedGuests) : 100,
-        estimatedBudget: estimatedBudget ? String(estimatedBudget) : '80000.00',
-        weddingStyle: weddingStyle || 'Clássico',
+        weddingType: weddingType || null,
+        estimatedGuests: estimatedGuests ? Number(estimatedGuests) : 0,
+        estimatedBudget: estimatedBudget ? String(estimatedBudget) : '0.00',
+        weddingStyle: weddingStyle || null,
         ceremonyLocation: ceremonyLocation || null,
         receptionLocation: receptionLocation || null,
         stateId: stateId ? Number(stateId) : null,
         cityId: cityId ? Number(cityId) : null,
+        stateUf: stateUf || null,
+        cityName: cityName || null,
         couplePhoto: couplePhoto || null,
       });
     } else {
@@ -126,12 +167,20 @@ router.put('/profile', requireAuth, async (req: AuthRequest, res) => {
         ...(receptionLocation !== undefined ? { receptionLocation } : {}),
         ...(stateId !== undefined ? { stateId: Number(stateId) } : {}),
         ...(cityId !== undefined ? { cityId: Number(cityId) } : {}),
+        ...(stateUf !== undefined ? { stateUf } : {}),
+        ...(cityName !== undefined ? { cityName } : {}),
         ...(couplePhoto !== undefined ? { couplePhoto } : {}),
         updatedAt: new Date(),
       }).where(eq(coupleProfiles.userId, userId));
     }
 
-    const updatedProfs = await db.select().from(coupleProfiles).where(eq(coupleProfiles.userId, userId));
+    let updatedProfs = await db.select().from(coupleProfiles).where(eq(coupleProfiles.userId, userId));
+    const planningProgress = calculateProfileCompletion(updatedProfs[0]);
+    await db
+      .update(coupleProfiles)
+      .set({ planningProgress, updatedAt: new Date() })
+      .where(eq(coupleProfiles.userId, userId));
+    updatedProfs = await db.select().from(coupleProfiles).where(eq(coupleProfiles.userId, userId));
     return res.json({ success: true, profile: updatedProfs[0] });
   } catch (err: any) {
     return res.status(500).json({ success: false, error: err.message });
@@ -169,7 +218,7 @@ router.get('/dashboard', requireAuth, async (req: AuthRequest, res) => {
 
     // Budget & Expenses
     const budgetList = await db.select().from(weddingBudgets).where(eq(weddingBudgets.userId, userId));
-    const totalBudget = budgetList[0] ? parseFloat(budgetList[0].totalBudget || '0') : parseFloat(profile?.estimatedBudget || '80000');
+    const totalBudget = budgetList[0] ? parseFloat(budgetList[0].totalBudget || '0') : parseFloat(profile?.estimatedBudget || '0');
 
     const expensesList = await db.select().from(weddingExpenses).where(and(eq(weddingExpenses.userId, userId), isNull(weddingExpenses.deletedAt)));
     let contractedTotal = 0;
@@ -230,7 +279,8 @@ router.get('/dashboard', requireAuth, async (req: AuthRequest, res) => {
       dashboard: {
         coupleName: profile ? `${profile.partnerName ? `Noiva & ${profile.partnerName}` : 'Casal'}` : 'Casal',
         weddingDate: profile?.weddingDate || null,
-        weddingStyle: profile?.weddingStyle || 'Clássico',
+        weddingStyle: profile?.weddingStyle || null,
+        profileCompletionPercentage: calculateProfileCompletion(profile),
         daysRemaining,
         weeksRemaining,
         checklist: {
@@ -520,7 +570,7 @@ router.get('/budget', requireAuth, async (req: AuthRequest, res) => {
     let budget = bList[0];
 
     if (!budget) {
-      const [bInsert] = await db.insert(weddingBudgets).values({ userId, totalBudget: '80000.00' });
+      const [bInsert] = await db.insert(weddingBudgets).values({ userId, totalBudget: '0.00' });
       const newB = await db.select().from(weddingBudgets).where(eq(weddingBudgets.id, Number(bInsert.insertId)));
       budget = newB[0];
     }
@@ -553,9 +603,9 @@ router.put('/budget', requireAuth, async (req: AuthRequest, res) => {
     let budgetId = bList[0]?.id;
 
     if (!budgetId) {
-      const [bInsert] = await db.insert(weddingBudgets).values({ userId, totalBudget: String(totalBudget || '80000.00') });
+      const [bInsert] = await db.insert(weddingBudgets).values({ userId, totalBudget: String(totalBudget || '0.00') });
       budgetId = Number(bInsert.insertId);
-    } else if (totalBudget) {
+    } else if (totalBudget !== undefined) {
       await db.update(weddingBudgets).set({ totalBudget: String(totalBudget), updatedAt: new Date() }).where(eq(weddingBudgets.id, budgetId));
     }
 
@@ -1021,7 +1071,115 @@ router.delete('/favorites/inspirations/:inspirationId', requireAuth, async (req:
 });
 
 // ============================================================================
-// 9. TIMELINE (CRONOGRAMA DO DIA)
+// 9. SAVED CALCULATIONS
+// ============================================================================
+
+router.get('/simulations/photography/latest', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const userId = getUserId(req);
+    const rows = await db
+      .select()
+      .from(photographyQuoteSimulations)
+      .where(eq(photographyQuoteSimulations.userId, userId))
+      .orderBy(desc(photographyQuoteSimulations.createdAt))
+      .limit(1);
+    let simulation: any = rows[0] || null;
+    if (simulation?.cityId) {
+      const cityRows = await db.select({ name: cities.name }).from(cities).where(eq(cities.id, simulation.cityId)).limit(1);
+      simulation = { ...simulation, cityName: cityRows[0]?.name || '' };
+    }
+    return res.json({ success: true, simulation });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+router.post('/simulations/photography', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const userId = getUserId(req);
+    const {
+      city,
+      guestCount,
+      weddingType,
+      coverageHours,
+      includeDrone,
+      includeAlbum,
+      includeSecondPhotographer,
+      estimatedMinPrice,
+      estimatedMaxPrice,
+    } = req.body;
+    if (!city || Number(guestCount) <= 0) {
+      return res.status(400).json({ success: false, error: 'Informe a cidade e a quantidade de convidados.' });
+    }
+    const cityRows = await db.select({ id: cities.id }).from(cities).where(eq(cities.name, String(city).trim())).limit(1);
+    const parsedHours = String(coverageHours).toLowerCase().includes('ilimitado')
+      ? 24
+      : Math.max(1, Number.parseInt(String(coverageHours), 10) || 8);
+    const [insert] = await db.insert(photographyQuoteSimulations).values({
+      userId,
+      cityId: cityRows[0]?.id || null,
+      guestCount: Number(guestCount),
+      weddingType: weddingType || null,
+      coverageHours: parsedHours,
+      includeDrone: Boolean(includeDrone),
+      includeAlbum: Boolean(includeAlbum),
+      includeSecondPhotographer: Boolean(includeSecondPhotographer),
+      estimatedMinPrice: String(Math.max(0, Number(estimatedMinPrice) || 0)),
+      estimatedMaxPrice: String(Math.max(0, Number(estimatedMaxPrice) || 0)),
+    });
+    const rows = await db
+      .select()
+      .from(photographyQuoteSimulations)
+      .where(eq(photographyQuoteSimulations.id, Number(insert.insertId)));
+    return res.status(201).json({ success: true, simulation: rows[0] });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+router.get('/simulations/installments', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const userId = getUserId(req);
+    const simulations = await db
+      .select()
+      .from(installmentSimulations)
+      .where(eq(installmentSimulations.userId, userId))
+      .orderBy(desc(installmentSimulations.createdAt))
+      .limit(20);
+    return res.json({ success: true, simulations });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+router.post('/simulations/installments', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const userId = getUserId(req);
+    const { description, totalAmount, installments, interestRate } = req.body;
+    const amount = Number(totalAmount);
+    const count = Number(installments);
+    const rate = Number(interestRate || 0);
+    if (!description || amount <= 0 || count <= 0) {
+      return res.status(400).json({ success: false, error: 'Descrição, valor e parcelas são obrigatórios.' });
+    }
+    const installmentAmount = (amount * (1 + rate / 100)) / count;
+    const [insert] = await db.insert(installmentSimulations).values({
+      userId,
+      description,
+      totalAmount: amount.toFixed(2),
+      installments: count,
+      installmentAmount: installmentAmount.toFixed(2),
+      interestRate: rate.toFixed(2),
+    });
+    const rows = await db.select().from(installmentSimulations).where(eq(installmentSimulations.id, Number(insert.insertId)));
+    return res.status(201).json({ success: true, simulation: rows[0] });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ============================================================================
+// 10. TIMELINE (CRONOGRAMA DO DIA)
 // ============================================================================
 
 // GET /api/bride/timeline

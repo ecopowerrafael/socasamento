@@ -2,7 +2,7 @@ import { Router } from 'express';
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
 import { db } from '../db/index.ts';
-import { users, photographers, coupleProfiles, weddingBudgets, weddingBudgetCategories, weddingTasks, weddingTimelines, weddingTimelineItems, achievements, userAchievements, passwordResets } from '../db/schema.ts';
+import { users, photographers, coupleProfiles, weddingBudgets, weddingBudgetCategories, weddingTasks, weddingTimelines, achievements, userAchievements, passwordResets, states, cities } from '../db/schema.ts';
 import { eq, or, and, gte } from 'drizzle-orm';
 import { signToken, requireAuth, getTokenFromReq, verifyToken, AuthRequest } from '../middleware/auth.ts';
 
@@ -100,6 +100,8 @@ router.post('/register-bride', async (req, res) => {
       weddingDate,
       stateId,
       cityId,
+      uf,
+      cityName,
       termsAccepted,
       privacyConsent,
       marketingConsent,
@@ -112,8 +114,11 @@ router.post('/register-bride', async (req, res) => {
       couplePhoto,
     } = req.body;
 
-    if (!name || !email || !password) {
-      return res.status(400).json({ success: false, error: 'Nome, e-mail e senha são obrigatórios.' });
+    if (!name || !email || !password || password.length < 6 || !phone || !partnerName || !weddingDate || !uf || !cityName) {
+      return res.status(400).json({
+        success: false,
+        error: 'Nome, parceiro(a), e-mail, telefone, data, cidade, estado e senha com pelo menos 6 caracteres são obrigatórios.',
+      });
     }
 
     if (!termsAccepted || !privacyConsent) {
@@ -155,24 +160,59 @@ router.post('/register-bride', async (req, res) => {
 
     const userId = Number(userInsert.insertId);
 
-    // Create Couple Profile
-    const parsedBudget = estimatedBudget ? String(estimatedBudget) : '80000.00';
-    const parsedGuests = estimatedGuests ? Number(estimatedGuests) : 100;
+    // Resolve signup location against the real MySQL location catalog.
+    let resolvedStateId = stateId ? Number(stateId) : null;
+    let resolvedCityId = cityId ? Number(cityId) : null;
+    if (!resolvedStateId && uf) {
+      const stateRows = await db
+        .select({ id: states.id })
+        .from(states)
+        .where(eq(states.uf, String(uf).trim().toUpperCase()))
+        .limit(1);
+      resolvedStateId = stateRows[0]?.id || null;
+    }
+    if (!resolvedCityId && cityName) {
+      const cityConditions = [eq(cities.name, String(cityName).trim())];
+      if (resolvedStateId) cityConditions.push(eq(cities.stateId, resolvedStateId));
+      const cityRows = await db
+        .select({ id: cities.id, stateId: cities.stateId })
+        .from(cities)
+        .where(and(...cityConditions))
+        .limit(1);
+      resolvedCityId = cityRows[0]?.id || null;
+      resolvedStateId = resolvedStateId || cityRows[0]?.stateId || null;
+    }
+
+    // Optional values stay empty until the couple supplies them.
+    const parsedBudget = estimatedBudget && Number(estimatedBudget) > 0 ? String(estimatedBudget) : '0.00';
+    const parsedGuests = estimatedGuests && Number(estimatedGuests) > 0 ? Number(estimatedGuests) : 0;
+    const completionFields = [
+      partnerName,
+      weddingDate,
+      resolvedCityId || cityName,
+      parsedGuests > 0,
+      Number(parsedBudget) > 0,
+      ceremonyLocation,
+      weddingStyle,
+    ];
+    const planningProgress = Math.round((completionFields.filter(Boolean).length / completionFields.length) * 100);
 
     await db.insert(coupleProfiles).values({
       userId,
-      partnerName: partnerName || 'Parceiro(a)',
+      partnerName: partnerName || null,
       weddingDate: weddingDate || null,
-      weddingType: weddingType || 'Tradicional',
+      weddingType: weddingType || null,
       estimatedGuests: parsedGuests,
       estimatedBudget: parsedBudget,
-      weddingStyle: weddingStyle || 'Clássico / Elegante',
+      weddingStyle: weddingStyle || null,
       ceremonyLocation: ceremonyLocation || null,
       receptionLocation: receptionLocation || null,
-      stateId: stateId ? Number(stateId) : null,
-      cityId: cityId ? Number(cityId) : null,
+      stateId: resolvedStateId,
+      cityId: resolvedCityId,
+      stateUf: uf ? String(uf).trim().toUpperCase() : null,
+      cityName: cityName ? String(cityName).trim() : null,
       couplePhoto: couplePhoto || null,
-      planningProgress: 10,
+      planningProgress,
     });
 
     // Create Budget & Categories
@@ -183,7 +223,7 @@ router.post('/register-bride', async (req, res) => {
     });
     const budgetId = Number(budgetInsert.insertId);
 
-    const defaultBudgetNum = parseFloat(parsedBudget) || 80000;
+    const defaultBudgetNum = parseFloat(parsedBudget) || 0;
     const defaultCategories = [
       { name: 'Buffet & Bebidas', pct: '35.00' },
       { name: 'Espaço & Decoração', pct: '20.00' },
@@ -235,36 +275,12 @@ router.post('/register-bride', async (req, res) => {
       });
     }
 
-    // Insert Default Timeline
-    const [timelineInsert] = await db.insert(weddingTimelines).values({
+    // Create only the timeline container. The couple creates its own schedule.
+    await db.insert(weddingTimelines).values({
       userId,
-      title: 'Cronograma Padrão do Casamento',
+      title: 'Cronograma do Dia do Casamento',
       weddingDate: weddingDate || null,
     });
-    const timelineId = Number(timelineInsert.insertId);
-
-    const defaultTimelineItems = [
-      { time: '08:00', title: 'Make & Hair da Noiva', desc: 'Início do dia da noiva no camarim/salão', resp: 'Maquiadora & Cabeleireira', sortOrder: 1 },
-      { time: '13:00', title: 'Chegada da Fotografia no Making Of', desc: 'Registro dos preparativos e detalhes dos trajes e acessórios', resp: 'Equipe de Fotografia', sortOrder: 2 },
-      { time: '16:00', title: 'Chegada ao Local da Cerimônia', desc: 'Ajustes finais e retratos a sós da noiva com os pais', resp: 'Cerimonial & Fotógrafo', sortOrder: 3 },
-      { time: '17:00', title: 'Início da Cerimônia', desc: 'Entrada dos padrinhos, noivo, florista e noiva', resp: 'Celebrante & Músicos', sortOrder: 4 },
-      { time: '18:15', title: 'Fotos Oficiais com Padrinhos e Família', desc: 'Sessão rápida no altar/cenário do casamento', resp: 'Fotógrafo', sortOrder: 5 },
-      { time: '19:00', title: 'Entrada dos Noivos na Festa & Brinde', desc: 'Corte simbólico do bolo e recepção dos convidados', resp: 'DJ & Cerimonial', sortOrder: 6 },
-      { time: '19:30', title: 'Abertura do Buffet e Jantar', desc: 'Serviço de alimentos e bebidas para os convidados', resp: 'Buffet', sortOrder: 7 },
-      { time: '20:30', title: 'Primeira Dança dos Noivos & Pista Aberta', desc: 'Abertura oficial da pista de dança para comemoração', resp: 'Banda / DJ', sortOrder: 8 },
-      { time: '23:50', title: 'Encerramento e Saída dos Noivos', desc: 'Foto de despedida e entrega de lembrancinhas', resp: 'Cerimonial', sortOrder: 9 },
-    ];
-
-    for (const item of defaultTimelineItems) {
-      await db.insert(weddingTimelineItems).values({
-        timelineId,
-        time: item.time,
-        title: item.title,
-        description: item.desc,
-        responsible: item.resp,
-        sortOrder: item.sortOrder,
-      });
-    }
 
     // Unlock initial achievement
     try {
