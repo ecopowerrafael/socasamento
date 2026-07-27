@@ -31,8 +31,7 @@ import {
   UserCheck,
   Star,
   ExternalLink,
-  Bot,
-  Lock
+  Bot
 } from 'lucide-react';
 import {
   BrideGuest,
@@ -911,7 +910,7 @@ export const ToolsCoupleView: React.FC<ToolsCoupleViewProps> = ({
             <span className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3 py-1 text-xs font-bold text-[#E7C98A]">
               <Sparkles className="h-4 w-4" /> Portal gratuito da noiva e do casal
             </span>
-            <h1 className="text-3xl sm:text-5xl font-serif font-bold">Planeje seu casamento com todos os dados em um só lugar</h1>
+            <h1 className="text-3xl sm:text-5xl font-serif font-bold">Ferramentas totalmente gratuitas para planejar seu casamento</h1>
             <p className="text-sm sm:text-base leading-relaxed text-white/85">
               Para acessar as ferramentas, crie seu cadastro gratuito. A data e o local do casamento,
               número de convidados e orçamento são importantes para calcular prazos, criar lembretes
@@ -933,16 +932,13 @@ export const ToolsCoupleView: React.FC<ToolsCoupleViewProps> = ({
                 {userSession ? 'Entrar com uma conta de casal' : 'Já tenho cadastro'}
               </button>
             </div>
-            <p className="flex items-center gap-2 text-xs text-white/70">
-              <Lock className="h-4 w-4" /> Seus dados pessoais e seu planejamento ficam vinculados à sua conta no banco MySQL.
-            </p>
           </div>
         </section>
 
         <section className="space-y-5">
           <div>
             <h2 className="text-2xl font-serif font-bold text-[#5A4035]">Ferramentas disponíveis após o cadastro</h2>
-            <p className="mt-1 text-sm text-stone-600">Nada é preenchido com informações fictícias: o painel começa com os dados informados por você.</p>
+            <p className="mt-1 text-sm text-stone-600">Crie sua conta gratuita e comece a organizar cada etapa do grande dia.</p>
           </div>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {tools.map(({ icon: Icon, title, text }) => (
