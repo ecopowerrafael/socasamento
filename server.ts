@@ -53,6 +53,7 @@ import { NotificationEventService, eventReminderService, notificationDeliveryWor
 async function startServer() {
   const app = express();
   const PORT = Number(process.env.PORT || 3000);
+  let databaseReady = false;
 
   app.use(express.json());
   app.use(cookieParser());
@@ -63,15 +64,15 @@ async function startServer() {
     console.log(`Server listening on port ${PORT}; initializing MySQL...`);
   });
 
-  // MySQL is mandatory. No functional data is served from memory or browser storage.
-  console.log('Verificando conexão e schema do MySQL...');
-  const connStatus = await testConnection();
-  if (!connStatus.success) {
-    throw new Error('O MySQL é obrigatório. Corrija DB_HOST, DB_DATABASE, DB_USERNAME e DB_PASSWORD antes de iniciar.');
-  }
-  const schemaAudit = await ensureCompleteMysqlSchema();
-  console.log(`Schema MySQL pronto: ${schemaAudit.existingTables}/${schemaAudit.expectedTables} tabelas.`);
-  await seedDatabase();
+  app.use('/api', (_req, res, next) => {
+    if (!databaseReady) {
+      return res.status(503).json({
+        success: false,
+        error: 'Banco de dados em inicialização. Tente novamente em instantes.',
+      });
+    }
+    next();
+  });
 
   // --- API ROUTES ---
   app.use('/api/auth', authRoutes);
@@ -2923,6 +2924,18 @@ Formate a resposta em tópicos claros com markdown.`;
       res.sendFile(path.join(distPath, 'index.html'));
     });
   }
+
+  // MySQL is mandatory. Run its potentially slow bootstrap only after every
+  // HTTP route and the production frontend have been registered.
+  console.log('Verificando conexão e schema do MySQL...');
+  const connStatus = await testConnection();
+  if (!connStatus.success) {
+    throw new Error('O MySQL é obrigatório. Corrija DB_HOST, DB_DATABASE, DB_USERNAME e DB_PASSWORD antes de iniciar.');
+  }
+  const schemaAudit = await ensureCompleteMysqlSchema();
+  console.log(`Schema MySQL pronto: ${schemaAudit.existingTables}/${schemaAudit.expectedTables} tabelas.`);
+  await seedDatabase();
+  databaseReady = true;
 
 }
 
