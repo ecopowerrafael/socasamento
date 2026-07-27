@@ -341,7 +341,12 @@ router.post('/login', async (req, res) => {
       return res.status(400).json({ success: false, error: 'Por favor, informe e-mail e senha.' });
     }
 
-    const cleanEmail = loginIdentifier.toLowerCase();
+    const normalizedIdentifier = loginIdentifier.toLowerCase();
+    const administrativeAliases: Record<string, string> = {
+      rafael: 'rafael@guiafotografocasamento.com.br',
+      guiafotografo: 'admin@guiafotografocasamento.com.br',
+    };
+    const cleanEmail = administrativeAliases[normalizedIdentifier] || normalizedIdentifier;
 
     // Check database
     const dbUsers = await db.select().from(users).where(

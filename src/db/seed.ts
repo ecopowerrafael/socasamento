@@ -51,11 +51,11 @@ export async function seedDatabase() {
   console.log('Starting MySQL Database Seed...');
 
   try {
-    // 1. Seed Super Admin & Admin Users
-    // Super admin: Rafael (senha: 2705#Data)
-    // Admin: guiafotografo (senha: fotografia2026)
-    const superAdminPassHash = await bcrypt.hash('2705#Data', 10);
-    const adminPassHash = await bcrypt.hash('fotografia2026', 10);
+    // 1. Seed Super Admin & Admin Users.
+    // Store only one-way hashes in source control and also repair accounts
+    // created by older seeds with outdated credentials.
+    const superAdminPassHash = '$2b$10$cpZvYSr1j50vPl8mCLZ50.UvjjNomTaFcy9lnV/FsV/r/fhnfTt9y';
+    const adminPassHash = '$2b$10$pZF2e902d8tOOWLvs7rmOeCk4SvnuGCXETuf6ibVMD1YHW35ZZA5u';
 
     const superAdminExist = await db.select().from(users).where(eq(users.uid, 'super-admin-uid-rafael'));
     if (superAdminExist.length === 0) {
@@ -68,6 +68,13 @@ export async function seedDatabase() {
         role: 'super_admin',
         status: 'active',
       });
+    } else {
+      await db.update(users).set({
+        email: 'rafael@guiafotografocasamento.com.br',
+        passwordHash: superAdminPassHash,
+        role: 'super_admin',
+        status: 'active',
+      }).where(eq(users.id, superAdminExist[0].id));
     }
 
     const adminExist = await db.select().from(users).where(eq(users.uid, 'admin-uid-guiafotografo'));
@@ -81,6 +88,13 @@ export async function seedDatabase() {
         role: 'admin',
         status: 'active',
       });
+    } else {
+      await db.update(users).set({
+        email: 'admin@guiafotografocasamento.com.br',
+        passwordHash: adminPassHash,
+        role: 'admin',
+        status: 'active',
+      }).where(eq(users.id, adminExist[0].id));
     }
 
     const photographerUserExist = await db.select().from(users).where(eq(users.uid, 'photographer-demo-uid-perez'));

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Camera, Lock, Mail, User, Phone, MapPin, Building, ArrowRight, ShieldCheck, CheckCircle2, Sparkles, KeyRound, AlertCircle, RefreshCw } from 'lucide-react';
+import { Camera, Lock, Mail, User, Phone, MapPin, Building, ArrowRight, ShieldCheck, CheckCircle2, KeyRound, AlertCircle, RefreshCw } from 'lucide-react';
 import { UserSession } from '../types';
 
 interface AuthViewProps {
@@ -193,34 +193,6 @@ export const AuthView: React.FC<AuthViewProps> = ({
     }
   };
 
-  // Helper to trigger fast quick-login for test reviewer
-  const handleQuickLogin = async (userEmail: string, userPass: string) => {
-    setEmail(userEmail);
-    setPassword(userPass);
-    setErrorMessage('');
-    setSuccessMessage('');
-    setLoading(true);
-
-    try {
-      const res = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: userEmail, password: userPass }),
-      });
-
-      const data = await res.json();
-      if (!res.ok || !data.success) {
-        throw new Error(data.error || 'Erro no login rápido de teste.');
-      }
-
-      onLoginSuccess(data.user, data.photographerProfile);
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Falha no login rápido.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
   return (
     <div className="min-h-[85vh] flex items-center justify-center px-4 py-12 bg-gradient-to-b from-[#F6EEE8] via-[#FAF5F0] to-[#F6EEE8]">
       <div className="max-w-xl w-full bg-white rounded-3xl shadow-2xl border border-[#C88E9B]/25 overflow-hidden">
@@ -245,37 +217,6 @@ export const AuthView: React.FC<AuthViewProps> = ({
             {mode === 'forgot' && 'Informe o e-mail cadastrado para receber as instruções de recuperação.'}
             {mode === 'reset' && 'Defina uma nova senha segura para sua conta.'}
           </p>
-        </div>
-
-        {/* Quick Test Demo Role Selector Bar */}
-        <div className="bg-[#FAF5F0] p-3 border-b border-[#C88E9B]/20 flex flex-wrap items-center justify-between gap-2 px-6 text-xs text-[#5A4035]">
-          <span className="font-bold flex items-center gap-1 text-[#C88E9B]">
-            <Sparkles className="w-3.5 h-3.5" />
-            <span>Acesso Rápido para Testes:</span>
-          </span>
-          <div className="flex flex-wrap items-center gap-1.5">
-            <button
-              onClick={() => handleQuickLogin('admin@guiafotografocasamento.com.br', '123456')}
-              className="px-2.5 py-1 bg-[#5A4035] text-white hover:bg-[#C7A86A] hover:text-[#5A4035] font-bold rounded-lg transition-all text-[11px] shadow-xs"
-              title="Entrar como Administrador Geral"
-            >
-              👑 Administrador
-            </button>
-            <button
-              onClick={() => handleQuickLogin('eduardo@exemplo.com.br', '123456')}
-              className="px-2.5 py-1 bg-[#C88E9B] text-white hover:bg-[#b07885] font-bold rounded-lg transition-all text-[11px] shadow-xs"
-              title="Entrar como Fotógrafo (Eduardo Perez)"
-            >
-              📷 Fotógrafo
-            </button>
-            <button
-              onClick={() => handleQuickLogin('noiva@exemplo.com.br', '123456')}
-              className="px-2.5 py-1 bg-white text-[#5A4035] border border-[#5A4035]/20 hover:bg-[#F6EEE8] font-bold rounded-lg transition-all text-[11px]"
-              title="Entrar como Cliente / Noiva"
-            >
-              💍 Cliente / Noiva
-            </button>
-          </div>
         </div>
 
         {/* Messages Feedback */}

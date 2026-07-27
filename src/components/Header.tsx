@@ -48,10 +48,9 @@ export const Header: React.FC<HeaderProps> = ({
             className="flex items-center cursor-pointer group"
           >
             <img 
-              src="https://loteria.rafaelaugusto.shop/wp-content/uploads/2026/07/ChatGPT-Image-23-de-jul.-de-2026-13_34_25.png" 
+              src="/guia-fotografo-casamento.png"
               alt="Guia Fotógrafo Casamento" 
-              referrerPolicy="no-referrer"
-              className="h-11 sm:h-13 max-w-[200px] sm:max-w-[260px] object-contain transition-transform group-hover:scale-105"
+              className="h-14 sm:h-16 max-w-[180px] sm:max-w-[220px] object-contain transition-transform group-hover:scale-105"
             />
           </div>
 

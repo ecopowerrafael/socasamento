@@ -1,5 +1,5 @@
 import React from 'react';
-import { Camera, MapPin, Heart, ShieldCheck, Instagram, Facebook, Mail, Phone, Globe } from 'lucide-react';
+import { Instagram, Facebook, Mail } from 'lucide-react';
 
 interface FooterProps {
   setCurrentView: (view: string) => void;
@@ -20,10 +20,9 @@ export const Footer: React.FC<FooterProps> = ({ setCurrentView, onSelectCity }) 
               className="cursor-pointer inline-block bg-white p-2 rounded-xl shadow-xs"
             >
               <img 
-                src="https://loteria.rafaelaugusto.shop/wp-content/uploads/2026/07/ChatGPT-Image-23-de-jul.-de-2026-13_34_25.png" 
+                src="/guia-fotografo-casamento.png"
                 alt="Guia Fotógrafo Casamento" 
-                referrerPolicy="no-referrer"
-                className="h-10 w-auto object-contain"
+                className="h-14 w-auto object-contain"
               />
             </div>
 
@@ -86,12 +85,6 @@ export const Footer: React.FC<FooterProps> = ({ setCurrentView, onSelectCity }) 
                 Painel Pro do Fotógrafo
               </button>
 
-              <button
-                onClick={() => setCurrentView('admin-panel')}
-                className="w-full py-2 bg-white/10 hover:bg-white/20 text-[#C7A86A] border border-[#C7A86A]/40 font-semibold text-xs rounded-xl transition-colors text-center block"
-              >
-                Painel Administrativo (Admin)
-              </button>
             </div>
           </div>
 
