@@ -77,6 +77,10 @@ export const BrazilMapStateBrowser: React.FC<BrazilMapStateBrowserProps> = ({ on
         <div className="py-10 text-center text-sm text-red-700 bg-red-50 rounded-2xl">
           {error} Os dados não foram substituídos por exemplos locais.
         </div>
+      ) : navStates.length === 0 ? (
+        <div className="py-10 text-center text-sm text-[#5A4035]/70 bg-[#FAF5F0] rounded-2xl">
+          Ainda não há fotógrafos aprovados para exibir na navegação regional.
+        </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           {/* State Selection Column */}

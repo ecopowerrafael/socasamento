@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { X, Sparkles, CheckCircle2, MessageSquare, ShieldCheck, Heart } from 'lucide-react';
+import { X, Sparkles, CheckCircle2, MapPin, Loader2, Crown } from 'lucide-react';
 import { Photographer, DeliveryType, StyleType, PricingPackage } from '../types';
 
 interface MultiQuoteModalProps {
@@ -7,6 +7,12 @@ interface MultiQuoteModalProps {
   onClose: () => void;
   selectedPhotographers: Photographer[];
   specificPackage?: PricingPackage;
+}
+
+interface QuoteCity {
+  city: string;
+  state: string;
+  photographersCount: number;
 }
 
 export const MultiQuoteModal: React.FC<MultiQuoteModalProps> = ({
@@ -35,30 +41,97 @@ export const MultiQuoteModal: React.FC<MultiQuoteModalProps> = ({
   const [successLead, setSuccessLead] = useState<any>(null);
   const [createAccount, setCreateAccount] = useState(true);
   const [password, setPassword] = useState('');
+  const [availableCities, setAvailableCities] = useState<QuoteCity[]>([]);
+  const [selectedCityKey, setSelectedCityKey] = useState('');
+  const [availablePhotographers, setAvailablePhotographers] = useState<Photographer[]>([]);
+  const [selectedPhotographerIds, setSelectedPhotographerIds] = useState<string[]>([]);
+  const [selectorLoading, setSelectorLoading] = useState(false);
+  const [selectorError, setSelectorError] = useState('');
+
+  const isGuidedMultiQuote = selectedPhotographers.length === 0;
+  const effectivePhotographers = isGuidedMultiQuote
+    ? availablePhotographers.filter((photographer) => selectedPhotographerIds.includes(String(photographer.id)))
+    : selectedPhotographers;
 
   useEffect(() => {
     if (!isOpen) return;
-    setFormData((previous) => ({
-      ...previous,
-      city: selectedPhotographers[0]?.city || previous.city || 'Piracicaba',
-      state: selectedPhotographers[0]?.state || previous.state || 'SP',
-    }));
     setSuccessLead(null);
-  }, [isOpen, selectedPhotographers]);
+    setSelectorError('');
+    setSelectedPhotographerIds([]);
+    setAvailablePhotographers([]);
+
+    if (!isGuidedMultiQuote) {
+      setFormData((previous) => ({
+        ...previous,
+        city: selectedPhotographers[0]?.city || previous.city || '',
+        state: selectedPhotographers[0]?.state || previous.state || '',
+      }));
+      return;
+    }
+
+    setSelectedCityKey('');
+    setFormData((previous) => ({ ...previous, city: '', state: '' }));
+    setSelectorLoading(true);
+    fetch('/api/quote/cities')
+      .then(async (response) => {
+        const body = await response.json();
+        if (!response.ok || body.success === false) {
+          throw new Error(body.error || 'Não foi possível carregar as cidades.');
+        }
+        setAvailableCities(Array.isArray(body.cities) ? body.cities : []);
+      })
+      .catch((error) => {
+        setAvailableCities([]);
+        setSelectorError(error instanceof Error ? error.message : 'Não foi possível carregar as cidades.');
+      })
+      .finally(() => setSelectorLoading(false));
+  }, [isOpen, isGuidedMultiQuote, selectedPhotographers]);
+
+  useEffect(() => {
+    if (!isOpen || !isGuidedMultiQuote || !selectedCityKey) return;
+    const [state, city] = selectedCityKey.split('|||');
+    if (!state || !city) return;
+
+    setFormData((previous) => ({ ...previous, city, state }));
+    setSelectedPhotographerIds([]);
+    setAvailablePhotographers([]);
+    setSelectorError('');
+    setSelectorLoading(true);
+
+    fetch(`/api/photographers?city=${encodeURIComponent(city)}&state=${encodeURIComponent(state)}`)
+      .then(async (response) => {
+        const body = await response.json();
+        if (!response.ok || body.success === false) {
+          throw new Error(body.error || 'Não foi possível carregar os fotógrafos.');
+        }
+        setAvailablePhotographers(Array.isArray(body.photographers) ? body.photographers : []);
+      })
+      .catch((error) => {
+        setSelectorError(error instanceof Error ? error.message : 'Não foi possível carregar os fotógrafos.');
+      })
+      .finally(() => setSelectorLoading(false));
+  }, [isOpen, isGuidedMultiQuote, selectedCityKey]);
 
   if (!isOpen) return null;
 
   const toggleService = (serv: DeliveryType) => {
     setFormData((prev) => ({
       ...prev,
-      servicesNeeded: prev.servicesNeeded.includes(serv)
-        ? prev.servicesNeeded.filter((s) => s !== serv)
-        : [...prev, serv]
+      servicesNeeded: (() => {
+        const currentServices = Array.isArray(prev.servicesNeeded) ? prev.servicesNeeded : [];
+        return currentServices.includes(serv)
+          ? currentServices.filter((service) => service !== serv)
+          : [...currentServices, serv];
+      })(),
     }));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (effectivePhotographers.length === 0) {
+      setSelectorError('Selecione pelo menos um fotógrafo para receber a cotação.');
+      return;
+    }
     setLoading(true);
 
     try {
@@ -84,7 +157,7 @@ export const MultiQuoteModal: React.FC<MultiQuoteModalProps> = ({
 
       const payload = {
         ...formData,
-        photographerIds: selectedPhotographers.map((p) => p.id),
+        photographerIds: effectivePhotographers.map((p) => p.id),
         specificPackageName: specificPackage?.name || null
       };
 
@@ -130,7 +203,7 @@ export const MultiQuoteModal: React.FC<MultiQuoteModalProps> = ({
             <p className="text-sm text-[#5A4035]/80 max-w-md mx-auto">
               Sua solicitação foi enviada para{' '}
               <strong className="text-[#C88E9B]">
-                {selectedPhotographers.map((p) => p.studioName).join(', ')}
+                {effectivePhotographers.map((p) => p.studioName).join(', ')}
               </strong>
               . Os profissionais entrarão em contato via WhatsApp/Email com as propostas personalizadas.
             </p>
@@ -154,9 +227,11 @@ export const MultiQuoteModal: React.FC<MultiQuoteModalProps> = ({
                 <span>Orçamento Rápido e Seguro</span>
               </div>
               <h2 className="text-2xl font-serif font-bold text-[#5A4035]">
-                {selectedPhotographers.length > 1
-                  ? `Solicitar Orçamento Múltiplo (${selectedPhotographers.length} Estúdios)`
-                  : `Solicitar Orçamento para ${selectedPhotographers[0]?.studioName || 'Fotógrafo'}`}
+                {isGuidedMultiQuote
+                  ? 'Cotação Múltipla por Cidade'
+                  : effectivePhotographers.length > 1
+                    ? `Solicitar Orçamento Múltiplo (${effectivePhotographers.length} Estúdios)`
+                    : `Solicitar Orçamento para ${effectivePhotographers[0]?.studioName || 'Fotógrafo'}`}
               </h2>
               {specificPackage && (
                 <p className="text-xs text-[#C88E9B] font-bold">
@@ -165,16 +240,118 @@ export const MultiQuoteModal: React.FC<MultiQuoteModalProps> = ({
               )}
             </div>
 
-            {/* Selected photographers avatars bar */}
-            <div className="bg-[#FAF5F0] p-3 rounded-2xl border border-[#C88E9B]/20 flex items-center gap-3 overflow-x-auto">
-              <span className="text-xs font-bold text-[#5A4035] shrink-0">Para:</span>
-              {selectedPhotographers.map((p) => (
-                <div key={p.id} className="flex items-center gap-1.5 bg-white px-2.5 py-1 rounded-xl border border-[#5A4035]/10 shrink-0 text-xs">
-                  <img src={p.avatar} alt={p.name} className="w-5 h-5 rounded-full object-cover" />
-                  <span className="font-semibold text-[#5A4035]">{p.studioName}</span>
+            {isGuidedMultiQuote ? (
+              <div className="bg-[#FAF5F0] p-4 rounded-2xl border border-[#C88E9B]/20 space-y-4">
+                <div>
+                  <label className="flex items-center gap-2 font-bold text-[#5A4035] mb-1.5">
+                    <MapPin className="w-4 h-4 text-[#C88E9B]" />
+                    1. Escolha a cidade do casamento
+                  </label>
+                  <select
+                    value={selectedCityKey}
+                    onChange={(event) => setSelectedCityKey(event.target.value)}
+                    disabled={selectorLoading && availableCities.length === 0}
+                    className="w-full p-2.5 bg-white border border-[#5A4035]/20 rounded-xl"
+                  >
+                    <option value="">Selecione uma cidade...</option>
+                    {availableCities.map((city) => (
+                      <option key={`${city.state}-${city.city}`} value={`${city.state}|||${city.city}`}>
+                        {city.city} - {city.state} ({city.photographersCount} fotógrafo{city.photographersCount === 1 ? '' : 's'})
+                      </option>
+                    ))}
+                  </select>
                 </div>
-              ))}
-            </div>
+
+                {selectorLoading && (
+                  <div className="flex items-center gap-2 text-[#5A4035]/70">
+                    <Loader2 className="w-4 h-4 animate-spin text-[#C88E9B]" />
+                    Consultando cadastros reais...
+                  </div>
+                )}
+
+                {selectorError && (
+                  <p className="text-xs font-semibold text-red-700 bg-red-50 border border-red-200 rounded-xl p-3">
+                    {selectorError}
+                  </p>
+                )}
+
+                {!selectorLoading && availableCities.length === 0 && !selectorError && (
+                  <p className="text-xs text-[#5A4035]/70">
+                    Ainda não há cidades com fotógrafos aprovados para cotação.
+                  </p>
+                )}
+
+                {selectedCityKey && !selectorLoading && availablePhotographers.length === 0 && !selectorError && (
+                  <p className="text-xs text-[#5A4035]/70">
+                    Ainda não há fotógrafos aprovados nesta cidade.
+                  </p>
+                )}
+
+                {availablePhotographers.length > 0 && (
+                  <div className="space-y-2">
+                    <p className="font-bold text-[#5A4035]">
+                      2. Selecione os fotógrafos que receberão o pedido
+                    </p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-52 overflow-y-auto pr-1">
+                      {availablePhotographers.map((photographer: Photographer & { hasActivePremium?: boolean }) => {
+                        const photographerId = String(photographer.id);
+                        const selected = selectedPhotographerIds.includes(photographerId);
+                        return (
+                          <button
+                            key={photographerId}
+                            type="button"
+                            onClick={() => {
+                              setSelectorError('');
+                              setSelectedPhotographerIds((previous) =>
+                                previous.includes(photographerId)
+                                  ? previous.filter((id) => id !== photographerId)
+                                  : [...previous, photographerId],
+                              );
+                            }}
+                            className={`p-3 rounded-xl border text-left transition-all ${
+                              selected
+                                ? 'bg-[#C88E9B] border-[#C88E9B] text-white'
+                                : 'bg-white border-[#5A4035]/15 text-[#5A4035] hover:border-[#C88E9B]'
+                            }`}
+                          >
+                            <div className="flex items-center gap-2">
+                              <img
+                                src={photographer.avatar}
+                                alt={photographer.name}
+                                className="w-9 h-9 rounded-full object-cover bg-[#F6EEE8]"
+                              />
+                              <div className="min-w-0 flex-1">
+                                <span className="font-bold block truncate">{photographer.studioName}</span>
+                                <span className={`text-[10px] ${selected ? 'text-white/80' : 'text-[#5A4035]/65'}`}>
+                                  {photographer.city} - {photographer.state}
+                                </span>
+                              </div>
+                              {photographer.hasActivePremium && (
+                                <Crown className={`w-4 h-4 ${selected ? 'text-[#FFF0B5]' : 'text-[#C7A86A]'}`} />
+                              )}
+                              <span className="font-bold">{selected ? '✓' : '+'}</span>
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <p className="text-[10px] text-[#5A4035]/60">
+                      Assinantes Premium ativos aparecem primeiro.
+                    </p>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="bg-[#FAF5F0] p-3 rounded-2xl border border-[#C88E9B]/20 flex items-center gap-3 overflow-x-auto">
+                <span className="text-xs font-bold text-[#5A4035] shrink-0">Para:</span>
+                {effectivePhotographers.map((photographer) => (
+                  <div key={photographer.id} className="flex items-center gap-1.5 bg-white px-2.5 py-1 rounded-xl border border-[#5A4035]/10 shrink-0 text-xs">
+                    <img src={photographer.avatar} alt={photographer.name} className="w-5 h-5 rounded-full object-cover" />
+                    <span className="font-semibold text-[#5A4035]">{photographer.studioName}</span>
+                  </div>
+                ))}
+              </div>
+            )}
 
             <form onSubmit={handleSubmit} className="space-y-4 text-xs">
               
@@ -235,6 +412,7 @@ export const MultiQuoteModal: React.FC<MultiQuoteModalProps> = ({
                   <input
                     type="text"
                     required
+                    readOnly={isGuidedMultiQuote}
                     value={formData.city}
                     onChange={(e) => setFormData({ ...formData, city: e.target.value })}
                     className="w-full p-2.5 bg-[#FAF5F0] border border-[#5A4035]/20 rounded-xl"
@@ -273,6 +451,7 @@ export const MultiQuoteModal: React.FC<MultiQuoteModalProps> = ({
                       <button
                         key={serv}
                         type="button"
+                        aria-pressed={isChecked}
                         onClick={() => toggleService(serv as any)}
                         className={`px-3 py-1.5 rounded-xl font-semibold transition-all ${
                           isChecked
@@ -329,8 +508,8 @@ export const MultiQuoteModal: React.FC<MultiQuoteModalProps> = ({
               <div className="pt-2">
                 <button
                   type="submit"
-                  disabled={loading}
-                  className="w-full py-3.5 bg-gradient-to-r from-[#C88E9B] to-[#b07885] hover:from-[#b07885] hover:to-[#5A4035] text-white font-bold text-sm rounded-xl shadow-md transition-all flex items-center justify-center gap-2"
+                  disabled={loading || effectivePhotographers.length === 0}
+                  className="w-full py-3.5 bg-gradient-to-r from-[#C88E9B] to-[#b07885] hover:from-[#b07885] hover:to-[#5A4035] text-white font-bold text-sm rounded-xl shadow-md transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <Sparkles className="w-4 h-4 text-[#C7A86A]" />
                   <span>{loading ? 'Enviando orçamentos...' : 'Enviar Solicitação Gratuitamente'}</span>

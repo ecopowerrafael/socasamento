@@ -279,7 +279,7 @@ export default function App() {
       setQuotePhotographers(selected);
       setSpecificPackageSelected(undefined);
     } else {
-      setQuotePhotographers(photographersList.slice(0, 3));
+      setQuotePhotographers([]);
       setSpecificPackageSelected(undefined);
     }
     setIsMultiQuoteOpen(true);

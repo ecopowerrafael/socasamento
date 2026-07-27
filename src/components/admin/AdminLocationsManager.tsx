@@ -527,8 +527,8 @@ export const AdminLocationsManager: React.FC = () => {
                       <th className="py-3 px-4">UF</th>
                       <th className="py-3 px-4">Nome do Estado</th>
                       <th className="py-3 px-4">Região</th>
-                      <th className="py-3 px-4 text-center">Cidades</th>
-                      <th className="py-3 px-4 text-center">Fotógrafos</th>
+                      <th className="py-3 px-4 text-center">Cidades com fotógrafos</th>
+                      <th className="py-3 px-4 text-center">Fotógrafos aprovados</th>
                       <th className="py-3 px-4 text-center">Navegação</th>
                       <th className="py-3 px-4 text-center">Ordem</th>
                       <th className="py-3 px-4 text-center">Status</th>
@@ -731,7 +731,7 @@ export const AdminLocationsManager: React.FC = () => {
                       <th className="py-3 px-4">Cidade</th>
                       <th className="py-3 px-4">Estado / UF</th>
                       <th className="py-3 px-4">Slug</th>
-                      <th className="py-3 px-4 text-center">Fotógrafos</th>
+                      <th className="py-3 px-4 text-center">Fotógrafos aprovados</th>
                       <th className="py-3 px-4 text-center">Navegação</th>
                       <th className="py-3 px-4 text-center">Destaque</th>
                       <th className="py-3 px-4 text-center">Ordem</th>

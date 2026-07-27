@@ -180,7 +180,7 @@ export async function seedDatabase() {
           name: stateData.name,
           slug: stateSlug,
           region: regionMap[stateData.uf] || 'Sudeste',
-          photographersCount: stateData.photographersCount,
+          photographersCount: 0,
           showInNavigation: true,
           sortOrder: index + 1,
           status: 'active',
@@ -190,6 +190,9 @@ export async function seedDatabase() {
         stateId = (stRes as any).insertId;
       } else {
         stateId = existingState[0].id;
+        if (existingState[0].photographersCount) {
+          await db.update(states).set({ photographersCount: 0 }).where(eq(states.id, stateId));
+        }
       }
 
       // Seed Top Cities
@@ -322,7 +325,7 @@ export async function seedDatabase() {
           faqs: photo.faqs,
           featuredInHome: photo.featuredInHome || false,
           plan: photo.plan || 'Gratuito',
-          status: 'approved',
+          status: 'demo',
         });
         pId = (res as any).insertId;
 
@@ -377,6 +380,8 @@ export async function seedDatabase() {
             status: 'approved',
           });
         }
+      } else if (existingPhoto[0].status !== 'demo') {
+        await db.update(photographers).set({ status: 'demo' }).where(eq(photographers.id, existingPhoto[0].id));
       }
     }
     console.log('✓ Photographers, Gallery, Packages, and Reviews seeded');

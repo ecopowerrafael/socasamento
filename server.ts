@@ -139,10 +139,30 @@ async function startServer() {
       } = req.query;
 
       const allPhotographers: any[] = await db.select().from(photographers);
+      const [allSubscriptions, allPlans] = await Promise.all([
+        db.select().from(photographerSubscriptions),
+        db.select().from(subscriptionPlans),
+      ]);
+      const premiumPlanIds = new Set(
+        allPlans
+          .filter((plan) => plan.status === 'active' && (plan.isPremium || plan.planType === 'PREMIUM'))
+          .map((plan) => plan.id),
+      );
+      const now = new Date();
+      const premiumPhotographerIds = new Set(
+        allSubscriptions
+          .filter((subscription) =>
+            String(subscription.status).toUpperCase() === 'ACTIVE'
+            && subscription.planId
+            && premiumPlanIds.has(subscription.planId)
+            && (!subscription.currentPeriodEnd || subscription.currentPeriodEnd >= now),
+          )
+          .map((subscription) => subscription.photographerId),
+      );
 
       // Filter in memory for maximum search flexibility
       let result = allPhotographers.filter((p) => {
-        if (p.status && p.status !== 'approved') return false;
+        if (p.status !== 'approved') return false;
 
         if (city && p.city.toLowerCase() !== String(city).toLowerCase()) return false;
         if (state && p.state.toLowerCase() !== String(state).toLowerCase()) return false;
@@ -185,10 +205,12 @@ async function startServer() {
       } else if (sortBy === 'experience') {
         result.sort((a, b) => (b.yearsExperience || 0) - (a.yearsExperience || 0));
       } else {
-        // Default sort: Premium first, then rating
+        // Default sort: active Premium subscription first, then rating.
         result.sort((a, b) => {
-          if (a.plan === 'Premium' && b.plan !== 'Premium') return -1;
-          if (b.plan === 'Premium' && a.plan !== 'Premium') return 1;
+          const aPremium = premiumPhotographerIds.has(a.id);
+          const bPremium = premiumPhotographerIds.has(b.id);
+          if (aPremium && !bPremium) return -1;
+          if (bPremium && !aPremium) return 1;
           return (b.rating || 0) - (a.rating || 0);
         });
       }
@@ -204,6 +226,7 @@ async function startServer() {
 
             return {
               ...p,
+              hasActivePremium: premiumPhotographerIds.has(p.id),
               gallery: pMedia
                 .filter((m) => m.type === 'photo')
                 .map((m) => ({
@@ -735,6 +758,39 @@ async function startServer() {
   });
 
   // Public Navigation Locations Section ("Navegação por Estados e Cidades do Brasil")
+  app.get('/api/quote/cities', async (_req, res) => {
+    try {
+      const approvedPhotographers = await db
+        .select({
+          city: photographers.city,
+          state: photographers.state,
+        })
+        .from(photographers)
+        .where(eq(photographers.status, 'approved'));
+
+      const cityMap = new Map<string, { city: string; state: string; photographersCount: number }>();
+      approvedPhotographers.forEach((photographer) => {
+        const city = photographer.city?.trim();
+        const state = photographer.state?.trim().toUpperCase();
+        if (!city || !state) return;
+        const key = `${state}|${city.toLocaleLowerCase('pt-BR')}`;
+        const existing = cityMap.get(key);
+        if (existing) {
+          existing.photographersCount += 1;
+        } else {
+          cityMap.set(key, { city, state, photographersCount: 1 });
+        }
+      });
+
+      const result = [...cityMap.values()].sort((a, b) =>
+        a.city.localeCompare(b.city, 'pt-BR') || a.state.localeCompare(b.state, 'pt-BR'),
+      );
+      res.json({ success: true, cities: result });
+    } catch (err: any) {
+      res.status(503).json({ success: false, error: 'MySQL indisponível.', details: err.message });
+    }
+  });
+
   app.get('/api/navigation/locations', async (req, res) => {
     try {
       const activeStates = await db
@@ -743,32 +799,67 @@ async function startServer() {
         .where(and(eq(states.showInNavigation, true), eq(states.status, 'active'), isNull(states.deletedAt)))
         .orderBy(asc(states.sortOrder), asc(states.name));
 
+      const approvedPhotographers = await db
+        .select({
+          id: photographers.id,
+          city: photographers.city,
+          state: photographers.state,
+        })
+        .from(photographers)
+        .where(eq(photographers.status, 'approved'));
       const activeCities = await db
         .select()
         .from(cities)
-        .where(and(eq(cities.showInNavigation, true), eq(cities.status, 'active'), isNull(cities.deletedAt)))
-        .orderBy(asc(cities.sortOrder), asc(cities.name));
+        .where(and(eq(cities.status, 'active'), isNull(cities.deletedAt)));
 
-      const resultStates = activeStates.map((st) => {
-        const stateCities = activeCities
-          .filter((c) => c.stateId === st.id || c.stateUf === st.uf)
-          .map((c) => ({
-            id: c.id,
-            name: c.name,
-            slug: c.slug,
-            featured: c.featured,
-            url: c.slug.startsWith('/') ? c.slug : `/${c.slug}`,
-          }));
+      const resultStates = activeStates
+        .map((st) => {
+          const statePhotographers = approvedPhotographers.filter(
+            (photographer) => photographer.state?.toUpperCase() === st.uf.toUpperCase(),
+          );
+          const cityGroups = new Map<string, { name: string; photographersCount: number }>();
+          statePhotographers.forEach((photographer) => {
+            const cityName = photographer.city?.trim();
+            if (!cityName) return;
+            const key = cityName.toLocaleLowerCase('pt-BR');
+            const existing = cityGroups.get(key);
+            if (existing) existing.photographersCount += 1;
+            else cityGroups.set(key, { name: cityName, photographersCount: 1 });
+          });
 
-        return {
-          id: st.id,
-          name: st.name,
-          uf: st.uf,
-          slug: st.slug,
-          photographersCount: st.photographersCount || 0,
-          cities: stateCities,
-        };
-      });
+          const stateCities = [...cityGroups.entries()]
+            .map(([cityKey, cityGroup]) => {
+              const catalogCity = activeCities.find(
+                (city) =>
+                  city.stateUf.toUpperCase() === st.uf.toUpperCase()
+                  && city.name.toLocaleLowerCase('pt-BR') === cityKey,
+              );
+              const fallbackSlug = `fotografo-casamento-${cityGroup.name
+                .normalize('NFD')
+                .replace(/[\u0300-\u036f]/g, '')
+                .toLowerCase()
+                .replace(/[^a-z0-9]+/g, '-')}`;
+              return {
+                id: catalogCity?.id || `${st.uf}-${cityKey}`,
+                name: cityGroup.name,
+                slug: catalogCity?.slug || fallbackSlug,
+                featured: catalogCity?.featured || false,
+                photographersCount: cityGroup.photographersCount,
+                url: `/${catalogCity?.slug || fallbackSlug}`,
+              };
+            })
+            .sort((a, b) => b.photographersCount - a.photographersCount || a.name.localeCompare(b.name, 'pt-BR'));
+
+          return {
+            id: st.id,
+            name: st.name,
+            uf: st.uf,
+            slug: st.slug,
+            photographersCount: statePhotographers.length,
+            cities: stateCities,
+          };
+        })
+        .filter((state) => state.photographersCount > 0);
 
       res.json({ success: true, states: resultStates });
     } catch (err: any) {
@@ -821,8 +912,24 @@ async function startServer() {
       const statesList = await db.select().from(states)
         .where(isNull(states.deletedAt))
         .orderBy(asc(states.sortOrder), asc(states.name));
+      const approvedPhotographers = await db
+        .select({ city: photographers.city, state: photographers.state })
+        .from(photographers)
+        .where(eq(photographers.status, 'approved'));
+      const result = statesList.map((stateItem) => {
+        const statePhotographers = approvedPhotographers.filter(
+          (photographer) => photographer.state?.toUpperCase() === stateItem.uf.toUpperCase(),
+        );
+        return {
+          ...stateItem,
+          photographersCount: statePhotographers.length,
+          citiesCount: new Set(
+            statePhotographers.map((photographer) => photographer.city?.trim().toLocaleLowerCase('pt-BR')).filter(Boolean),
+          ).size,
+        };
+      });
 
-      res.json({ success: true, states: statesList });
+      res.json({ success: true, states: result });
     } catch (err: any) {
       res.status(500).json({ success: false, error: err?.message });
     }
@@ -833,8 +940,23 @@ async function startServer() {
       const citiesList = await db.select().from(cities)
         .where(isNull(cities.deletedAt))
         .orderBy(asc(cities.sortOrder), asc(cities.name));
+      const approvedPhotographers = await db
+        .select({ city: photographers.city, state: photographers.state })
+        .from(photographers)
+        .where(eq(photographers.status, 'approved'));
+      const result = citiesList
+        .map((cityItem) => ({
+          ...cityItem,
+          photographersCount: approvedPhotographers.filter(
+            (photographer) =>
+              photographer.state?.toUpperCase() === cityItem.stateUf.toUpperCase()
+              && photographer.city?.trim().toLocaleLowerCase('pt-BR')
+                === cityItem.name.trim().toLocaleLowerCase('pt-BR'),
+          ).length,
+        }))
+        .filter((cityItem) => cityItem.photographersCount > 0);
 
-      res.json({ success: true, cities: citiesList });
+      res.json({ success: true, cities: result });
     } catch (err: any) {
       res.status(500).json({ success: false, error: err?.message });
     }
@@ -1102,16 +1224,20 @@ async function startServer() {
         .where(isNull(states.deletedAt))
         .orderBy(asc(states.sortOrder), asc(states.name));
 
-      const allCities = await db.select().from(cities).where(isNull(cities.deletedAt));
       const allPhotos = await db.select().from(photographers);
+      const approvedPhotos = allPhotos.filter((photographer) => photographer.status === 'approved');
 
-      const cityCountMap: Record<string, number> = {};
-      allCities.forEach((c) => {
-        cityCountMap[c.stateUf] = (cityCountMap[c.stateUf] || 0) + 1;
+      const citySetMap: Record<string, Set<string>> = {};
+      approvedPhotos.forEach((photographer) => {
+        const uf = photographer.state?.toUpperCase();
+        const city = photographer.city?.trim().toLocaleLowerCase('pt-BR');
+        if (!uf || !city) return;
+        if (!citySetMap[uf]) citySetMap[uf] = new Set();
+        citySetMap[uf].add(city);
       });
 
       const photoCountMap: Record<string, number> = {};
-      allPhotos.forEach((p) => {
+      approvedPhotos.forEach((p) => {
         if (p.state) {
           const uf = p.state.toUpperCase();
           photoCountMap[uf] = (photoCountMap[uf] || 0) + 1;
@@ -1120,8 +1246,8 @@ async function startServer() {
 
       const result = allStates.map((st) => ({
         ...st,
-        citiesCount: cityCountMap[st.uf] || 0,
-        photographersCount: photoCountMap[st.uf] || st.photographersCount || 0,
+        citiesCount: citySetMap[st.uf]?.size || 0,
+        photographersCount: photoCountMap[st.uf] || 0,
       }));
 
       res.json({ success: true, states: result });
@@ -1296,11 +1422,12 @@ async function startServer() {
         stateMapById[st.id] = st;
       });
 
-      const allPhotos = await db.select().from(photographers);
+      const allPhotos = (await db.select().from(photographers))
+        .filter((photographer) => photographer.status === 'approved');
       const cityPhotoCount: Record<string, number> = {};
       allPhotos.forEach((p) => {
-        if (p.city) {
-          const key = p.city.toLowerCase();
+        if (p.city && p.state) {
+          const key = `${p.state.toUpperCase()}|${p.city.toLocaleLowerCase('pt-BR')}`;
           cityPhotoCount[key] = (cityPhotoCount[key] || 0) + 1;
         }
       });
@@ -1311,7 +1438,8 @@ async function startServer() {
           ...c,
           stateName: parentState ? parentState.name : c.stateUf,
           region: parentState ? parentState.region : 'Sudeste',
-          photographersCount: cityPhotoCount[c.name.toLowerCase()] || 0,
+          photographersCount:
+            cityPhotoCount[`${c.stateUf.toUpperCase()}|${c.name.toLocaleLowerCase('pt-BR')}`] || 0,
         };
       });
 
