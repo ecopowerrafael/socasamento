@@ -35,8 +35,9 @@ export const verifyToken = (token: string): UserPayload | null => {
 
 // Helper to extract token from HttpOnly Cookie or Authorization header
 export const getTokenFromReq = (req: Request): string | null => {
-  if (req.cookies && req.cookies.auth_token) {
-    return req.cookies.auth_token;
+  if (req.cookies) {
+    if (req.cookies.auth_token) return req.cookies.auth_token;
+    if (req.cookies.token) return req.cookies.token;
   }
   const authHeader = req.headers.authorization;
   if (authHeader && authHeader.startsWith('Bearer ')) {

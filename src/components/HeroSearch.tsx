@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Search, MapPin, Sparkles, Filter, CheckCircle2, ChevronRight, Camera, Film, Compass, Heart, Users, Sun } from 'lucide-react';
 import { CategoryType } from '../types';
 
@@ -11,29 +11,17 @@ interface HeroSearchProps {
   photographerCount: number;
 }
 
-export const CATEGORIES: { name: CategoryType; icon: React.FC<{ className?: string }> }[] = [
-  { name: 'Fotógrafos', icon: Camera },
-  { name: 'Foto e Filme', icon: Film },
-  { name: 'Drone', icon: Compass },
-  { name: 'Pré Wedding', icon: Heart },
-  { name: 'Pós Wedding', icon: Sun },
-  { name: 'Mini Wedding', icon: Users },
-  { name: 'Destination Wedding', icon: MapPin },
-  { name: 'Casamento Civil', icon: CheckCircle2 },
-  { name: 'Casamento Religioso', icon: CheckCircle2 },
-];
-
-export const TOP_CITIES_SUGGESTIONS = [
-  'Piracicaba',
-  'São Paulo',
-  'Campinas',
-  'Curitiba',
-  'Sorocaba',
-  'Osasco',
-  'Rio de Janeiro',
-  'Belo Horizonte',
-  'Florianópolis'
-];
+const categoryIcons: Record<string, React.FC<{ className?: string }>> = {
+  'Fotógrafos': Camera,
+  'Foto e Filme': Film,
+  Drone: Compass,
+  'Pré Wedding': Heart,
+  'Pós Wedding': Sun,
+  'Mini Wedding': Users,
+  'Destination Wedding': MapPin,
+  'Casamento Civil': CheckCircle2,
+  'Casamento Religioso': CheckCircle2,
+};
 
 export const HeroSearch: React.FC<HeroSearchProps> = ({
   selectedCity,
@@ -45,6 +33,33 @@ export const HeroSearch: React.FC<HeroSearchProps> = ({
 }) => {
   const [cityInput, setCityInput] = useState(selectedCity || '');
   const [showCityDropdown, setShowCityDropdown] = useState(false);
+  const [citySuggestions, setCitySuggestions] = useState<string[]>([]);
+  const [categories, setCategories] = useState<{ name: CategoryType; icon: React.FC<{ className?: string }> }[]>([]);
+
+  useEffect(() => {
+    Promise.all([
+      fetch('/api/cities').then((response) => response.json()),
+      fetch('/api/categories').then((response) => response.json()),
+    ])
+      .then(([cityData, categoryData]) => {
+        setCitySuggestions(
+          (cityData.cities || [])
+            .slice()
+            .sort((a: any, b: any) => Number(b.photographersCount || 0) - Number(a.photographersCount || 0))
+            .slice(0, 9)
+            .map((city: any) => city.name)
+        );
+        setCategories(
+          (categoryData.categories || [])
+            .filter((category: any) => category.showOnSearch !== false)
+            .map((category: any) => ({
+              name: category.name as CategoryType,
+              icon: categoryIcons[category.name] || Camera,
+            }))
+        );
+      })
+      .catch((error) => console.error('Erro ao carregar filtros de busca do MySQL:', error));
+  }, []);
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
@@ -106,7 +121,7 @@ export const HeroSearch: React.FC<HeroSearchProps> = ({
                     Cidades em Destaque
                   </div>
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-1">
-                    {TOP_CITIES_SUGGESTIONS.map((city) => (
+                    {citySuggestions.map((city) => (
                       <button
                         key={city}
                         type="button"
@@ -186,7 +201,7 @@ export const HeroSearch: React.FC<HeroSearchProps> = ({
           </div>
 
           <div className="grid grid-cols-3 sm:grid-cols-5 md:grid-cols-9 gap-2">
-            {CATEGORIES.map((cat) => {
+            {categories.map((cat) => {
               const Icon = cat.icon;
               const isSelected = selectedCategory === cat.name;
               return (

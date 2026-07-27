@@ -45,11 +45,34 @@ export const MultiQuoteModal: React.FC<MultiQuoteModalProps> = ({
     }));
   };
 
+  const [createAccount, setCreateAccount] = useState(true);
+  const [password, setPassword] = useState('');
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
 
     try {
+      // If user requested account creation and password is provided, attempt registration
+      if (createAccount && password) {
+        const registrationResponse = await fetch('/api/auth/register-bride', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: formData.coupleName,
+            email: formData.email,
+            phone: formData.whatsapp,
+            password,
+            weddingDate: formData.weddingDate,
+            weddingCity: formData.city,
+          })
+        });
+        const registration = await registrationResponse.json();
+        if (!registrationResponse.ok || registration.success === false) {
+          throw new Error(registration.error || 'Não foi possível criar a conta.');
+        }
+      }
+
       const payload = {
         ...formData,
         photographerIds: selectedPhotographers.map((p) => p.id),
@@ -72,8 +95,7 @@ export const MultiQuoteModal: React.FC<MultiQuoteModalProps> = ({
       }
     } catch (err) {
       setLoading(false);
-      // Fallback local success
-      setSuccessLead({ id: `lead-${Date.now()}` });
+      alert(err instanceof Error ? err.message : 'Não foi possível enviar a solicitação.');
     }
   };
 
@@ -259,12 +281,40 @@ export const MultiQuoteModal: React.FC<MultiQuoteModalProps> = ({
               <div>
                 <label className="block font-bold text-[#5A4035] mb-1">Mensagem Adicional para o Fotógrafo:</label>
                 <textarea
-                  rows={3}
+                  rows={2}
                   placeholder="Conte um pouco sobre o horário da cerimônia, estilo do vestido, ou se o casamento será na praia/campo..."
                   value={formData.message}
                   onChange={(e) => setFormData({ ...formData, message: e.target.value })}
                   className="w-full p-2.5 bg-[#FAF5F0] border border-[#5A4035]/20 rounded-xl"
                 ></textarea>
+              </div>
+
+              {/* Seamless Bride Account Creation Box */}
+              <div className="p-3.5 bg-rose-50/60 rounded-2xl border border-[#C88E9B]/30 space-y-2">
+                <label className="flex items-center gap-2 cursor-pointer font-bold text-[#5A4035] text-xs">
+                  <input
+                    type="checkbox"
+                    checked={createAccount}
+                    onChange={(e) => setCreateAccount(e.target.checked)}
+                    className="w-4 h-4 text-[#C88E9B] rounded focus:ring-[#C88E9B]"
+                  />
+                  <span>Criar minha conta de Noiva gratuitamente para acompanhar respostas</span>
+                </label>
+
+                {createAccount && (
+                  <div className="pt-1">
+                    <label className="block font-bold text-[#5A4035] mb-1 text-[11px]">
+                      Crie uma Senha para Acessar o Portal do Casal:
+                    </label>
+                    <input
+                      type="password"
+                      placeholder="Mínimo 6 caracteres"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      className="w-full p-2 bg-white border border-[#5A4035]/20 rounded-xl text-xs font-mono"
+                    />
+                  </div>
+                )}
               </div>
 
               <div className="pt-2">

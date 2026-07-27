@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sem Conexão | Guia Fotógrafo Casamento</title>
+  <style>
+    body {
+      font-family: 'Montserrat', system-ui, -apple-system, sans-serif;
+      background-color: #F6EEE8;
+      color: #5A4035;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      margin: 0;
+      padding: 24px;
+      text-align: center;
+    }
+    .card {
+      background: white;
+      border-radius: 24px;
+      padding: 40px 32px;
+      max-width: 440px;
+      box-shadow: 0 10px 30px rgba(90, 64, 53, 0.08);
+      border: 1px solid rgba(200, 142, 155, 0.2);
+    }
+    .icon {
+      width: 64px;
+      height: 64px;
+      margin: 0 auto 20px;
+      background: #FDF8F5;
+      color: #C88E9B;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 28px;
+    }
+    h1 {
+      font-family: 'Playfair Display', Georgia, serif;
+      font-size: 24px;
+      margin-bottom: 12px;
+      color: #4A332C;
+    }
+    p {
+      font-size: 14px;
+      line-height: 1.6;
+      color: #7A6055;
+      margin-bottom: 24px;
+    }
+    .btn {
+      background: #7B4B5F;
+      color: white;
+      border: none;
+      padding: 12px 28px;
+      border-radius: 12px;
+      font-weight: 600;
+      font-size: 14px;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    .btn:hover {
+      background: #653A4D;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="icon">⚡</div>
+    <h1>Você está sem conexão</h1>
+    <p>Você está sem conexão com a internet. Algumas informações salvas ainda podem ser visualizadas, mas mensagens, orçamentos e atualizações precisam de internet.</p>
+    <button class="btn" onclick="window.location.reload()">Tentar novamente</button>
+  </div>
+</body>
+</html>

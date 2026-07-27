@@ -1,5 +1,4 @@
-import React, { useState } from 'react';
-import { BLOG_ARTICLES } from '../data/mockData';
+import React, { useEffect, useState } from 'react';
 import { BlogArticle } from '../types';
 import { FileText, Clock, User, ArrowLeft, Sparkles, Share2 } from 'lucide-react';
 
@@ -9,6 +8,20 @@ interface BlogViewProps {
 
 export const BlogView: React.FC<BlogViewProps> = ({ openMultiQuote }) => {
   const [activeArticle, setActiveArticle] = useState<BlogArticle | null>(null);
+  const [articles, setArticles] = useState<BlogArticle[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    fetch('/api/blog')
+      .then(async (response) => {
+        const data = await response.json();
+        if (!response.ok || !data.success) throw new Error(data.error || 'Não foi possível carregar o blog.');
+        setArticles((data.articles || []).map((article: any) => ({ ...article, id: String(article.id) })));
+      })
+      .catch((reason) => setError(reason.message))
+      .finally(() => setLoading(false));
+  }, []);
 
   if (activeArticle) {
     return (
@@ -77,8 +90,12 @@ export const BlogView: React.FC<BlogViewProps> = ({ openMultiQuote }) => {
         </p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        {BLOG_ARTICLES.map((art) => (
+      {loading ? <p className="text-sm">Carregando artigos do MySQL…</p> : error ? (
+        <p className="rounded-2xl bg-red-50 text-red-700 p-5 text-sm">{error}</p>
+      ) : articles.length === 0 ? (
+        <p className="rounded-2xl bg-white p-8 text-sm text-center">Nenhum artigo publicado.</p>
+      ) : <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        {articles.map((art) => (
           <div
             key={art.id}
             onClick={() => setActiveArticle(art)}
@@ -108,7 +125,7 @@ export const BlogView: React.FC<BlogViewProps> = ({ openMultiQuote }) => {
             </div>
           </div>
         ))}
-      </div>
+      </div>}
 
     </div>
   );

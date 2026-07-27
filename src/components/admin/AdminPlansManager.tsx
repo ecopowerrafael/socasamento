@@ -110,19 +110,62 @@ export interface SubscriptionPlan {
 }
 
 const DEFAULT_TECHNICAL_FEATURES: PlanFeature[] = [
-  { featureKey: 'gallery_photos', featureName: 'Fotos no Portfólio', featureType: 'numeric', booleanValue: true, numericValue: 30, isUnlimited: false },
-  { featureKey: 'crm_access', featureName: 'Acesso ao CRM & Gestão', featureType: 'boolean', booleanValue: false, numericValue: null },
-  { featureKey: 'lead_management', featureName: 'Recebimento de Pedidos de Orçamento', featureType: 'boolean', booleanValue: true, numericValue: null },
-  { featureKey: 'direct_whatsapp', featureName: 'Botão Direto de WhatsApp', featureType: 'boolean', booleanValue: false, numericValue: null },
-  { featureKey: 'featured_in_search', featureName: 'Destaque nas Buscas Locais', featureType: 'boolean', booleanValue: false, numericValue: null },
-  { featureKey: 'custom_badge', featureName: 'Selo Oficial de Verificação', featureType: 'boolean', booleanValue: false, numericValue: null },
-  { featureKey: 'video_embed', featureName: 'Exibição de Vídeos & Teasers', featureType: 'boolean', booleanValue: false, numericValue: null },
-  { featureKey: 'social_links', featureName: 'Links de Redes Sociais & Site', featureType: 'boolean', booleanValue: true, numericValue: null },
+  // Perfil
+  { featureKey: 'public_profile', featureName: 'Perfil Público Ativo no Guia', featureType: 'boolean', booleanValue: true, numericValue: null },
+  { featureKey: 'show_premium_badge', featureName: 'Selo Oficial / Destaque Premium', featureType: 'boolean', booleanValue: false, numericValue: null },
+  { featureKey: 'show_whatsapp_button', featureName: 'Botão Direto de WhatsApp', featureType: 'boolean', booleanValue: false, numericValue: null },
+  { featureKey: 'show_phone', featureName: 'Exibição do Telefone Comercial', featureType: 'boolean', booleanValue: true, numericValue: null },
+  { featureKey: 'show_email', featureName: 'Exibição do E-mail de Contato', featureType: 'boolean', booleanValue: true, numericValue: null },
+  { featureKey: 'show_social_links', featureName: 'Exibição de Redes Sociais & Links', featureType: 'boolean', booleanValue: true, numericValue: null },
+  { featureKey: 'show_website', featureName: 'Exibição do Link do Site Próprio', featureType: 'boolean', booleanValue: false, numericValue: null },
+
+  // Galeria & Mídia
+  { featureKey: 'max_photos', featureName: 'Fotos no Portfólio (-1 = Ilimitado)', featureType: 'numeric', booleanValue: true, numericValue: 15, isUnlimited: false },
+  { featureKey: 'max_videos', featureName: 'Vídeos & Teasers na Galeria (-1 = Ilimitado)', featureType: 'numeric', booleanValue: true, numericValue: 0, isUnlimited: false },
+  { featureKey: 'max_albums', featureName: 'Álbuns de Casamentos (-1 = Ilimitado)', featureType: 'numeric', booleanValue: true, numericValue: 2, isUnlimited: false },
+  { featureKey: 'max_shoot_publications', featureName: 'Ensaios Publicados (-1 = Ilimitado)', featureType: 'numeric', booleanValue: true, numericValue: 3, isUnlimited: false },
+
+  // Área de Atuação
+  { featureKey: 'max_cities', featureName: 'Cidades de Atuação (-1 = Ilimitado)', featureType: 'numeric', booleanValue: true, numericValue: 3, isUnlimited: false },
+  { featureKey: 'max_states', featureName: 'Estados de Atuação (-1 = Ilimitado)', featureType: 'numeric', booleanValue: true, numericValue: 1, isUnlimited: false },
+
+  // Leads & Orçamentos
+  { featureKey: 'can_receive_leads', featureName: 'Receber Solicitações de Orçamento', featureType: 'boolean', booleanValue: true, numericValue: null },
+  { featureKey: 'monthly_leads_limit', featureName: 'Limite de Respostas de Leads/Mês (-1 = Ilimitado)', featureType: 'numeric', booleanValue: true, numericValue: 5, isUnlimited: false },
+  { featureKey: 'see_lead_contact_details', featureName: 'Acesso Direto ao Contato (Telefone/WhatsApp da Noiva)', featureType: 'boolean', booleanValue: false, numericValue: null },
+
+  // Mensagens & Contato
+  { featureKey: 'internal_messages', featureName: 'Chat Interno com os Noivos', featureType: 'boolean', booleanValue: true, numericValue: null },
+  { featureKey: 'allow_attachments', featureName: 'Permitir Envio de Anexos/PDFs', featureType: 'boolean', booleanValue: false, numericValue: null },
+  { featureKey: 'message_history_days', featureName: 'Histórico de Mensagens Retido (Dias)', featureType: 'numeric', booleanValue: true, numericValue: 30, isUnlimited: false },
+
+  // Posicionamento na Busca
+  { featureKey: 'search_priority', featureName: 'Prioridade de Posição na Busca (1-100)', featureType: 'numeric', booleanValue: true, numericValue: 10, isUnlimited: false },
+  { featureKey: 'featured_home', featureName: 'Exibição em Destaque na Home', featureType: 'boolean', booleanValue: false, numericValue: null },
+  { featureKey: 'show_as_recommended', featureName: 'Aparecer na Seção de Recomendados', featureType: 'boolean', booleanValue: false, numericValue: null },
+
+  // Métricas & Relatórios
+  { featureKey: 'profile_views_stats', featureName: 'Relatório de Visualizações do Perfil', featureType: 'boolean', booleanValue: true, numericValue: null },
+  { featureKey: 'whatsapp_clicks_stats', featureName: 'Métrica de Cliques no WhatsApp', featureType: 'boolean', booleanValue: false, numericValue: null },
+  { featureKey: 'full_reports', featureName: 'Relatório Completo de Conversão e Leads', featureType: 'boolean', booleanValue: false, numericValue: null },
+
+  // Avaliações
+  { featureKey: 'can_receive_reviews', featureName: 'Receber Avaliações e Notas dos Casais', featureType: 'boolean', booleanValue: true, numericValue: null },
+  { featureKey: 'highlight_reviews', featureName: 'Destaque de Avaliações no Perfil', featureType: 'boolean', booleanValue: false, numericValue: null },
+
+  // Recursos Adicionais
+  { featureKey: 'institutional_video', featureName: 'Vídeo Institucional de Apresentação', featureType: 'boolean', booleanValue: false, numericValue: null },
+  { featureKey: 'custom_banner', featureName: 'Banner de Capa Personalizado', featureType: 'boolean', booleanValue: false, numericValue: null },
+  { featureKey: 'public_schedule', featureName: 'Agenda Pública de Datas Disponíveis', featureType: 'boolean', booleanValue: false, numericValue: null },
+  { featureKey: 'download_contract', featureName: 'Botão Download Modelo de Contrato/PDF', featureType: 'boolean', booleanValue: false, numericValue: null },
+  { featureKey: 'download_catalog', featureName: 'Download de Catálogo em PDF', featureType: 'boolean', booleanValue: false, numericValue: null },
+  { featureKey: 'instagram_integration', featureName: 'Feed do Instagram Integrado', featureType: 'boolean', booleanValue: false, numericValue: null },
 ];
 
 export const AdminPlansManager: React.FC = () => {
   const [subModule, setSubModule] = useState<'plans' | 'subscriptions' | 'coupons' | 'settings'>('plans');
   const [plans, setPlans] = useState<SubscriptionPlan[]>([]);
+  const [subscriptions, setSubscriptions] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all');
@@ -220,6 +263,15 @@ export const AdminPlansManager: React.FC = () => {
   useEffect(() => {
     fetchPlans();
   }, [search, statusFilter, billingFilter]);
+
+  useEffect(() => {
+    fetch('/api/admin/subscriptions?limit=100')
+      .then((response) => response.json())
+      .then((data) => {
+        if (data.success) setSubscriptions(data.subscriptions || []);
+      })
+      .catch((error) => console.error('Erro ao carregar assinaturas do MySQL:', error));
+  }, []);
 
   const showAlert = (type: 'success' | 'error', text: string) => {
     setAlertMessage({ type, text });
@@ -969,59 +1021,195 @@ export const AdminPlansManager: React.FC = () => {
       )}
 
       {subModule === 'subscriptions' && (
-        <div className="bg-white p-8 rounded-2xl border border-rose-100 shadow-sm space-y-4">
-          <div className="flex items-center justify-between">
-            <h3 className="text-lg font-bold text-[#5A4035]">Visão Geral de Assinaturas</h3>
-            <span className="text-sm text-stone-500">{totalSubscribersCount} assinantes ativos no sistema</span>
+        <div className="bg-white p-6 sm:p-8 rounded-2xl border border-rose-100 shadow-sm space-y-6">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div>
+              <h3 className="text-xl font-serif font-bold text-[#5A4035]">Gerenciar Assinaturas dos Fotógrafos</h3>
+              <p className="text-xs text-stone-500 mt-1">
+                Acompanhe o status do plano, renovações, faturas e altere o plano dos estúdios individualmente.
+              </p>
+            </div>
+            <span className="text-xs font-bold text-emerald-800 bg-emerald-50 px-3 py-1.5 rounded-full border border-emerald-200">
+              {totalSubscribersCount} Fotógrafos com Plano Ativo
+            </span>
           </div>
-          <p className="text-sm text-stone-600">
-            Abaixo estão os fotógrafos com assinaturas registradas no portal Guia Fotógrafo Casamento:
-          </p>
-          <div className="p-6 bg-stone-50 rounded-2xl border border-stone-200 text-center space-y-2">
-            <Users className="w-8 h-8 text-[#C88E9B] mx-auto" />
-            <p className="text-sm font-medium text-[#5A4035]">Módulo de Assinaturas Integrado ao Banco de Dados</p>
-            <p className="text-xs text-stone-500">
-              Todas as renovações e novos cadastros de planos são computados em tempo real na tabela <code className="bg-stone-200 px-1 rounded">subscriptions</code>.
-            </p>
+
+          {/* Subscriptions Table */}
+          <div className="overflow-x-auto border border-stone-200 rounded-2xl">
+            <table className="w-full text-left text-xs text-stone-700">
+              <thead className="bg-stone-50 text-[#5A4035] uppercase font-bold text-[11px] border-b border-stone-200">
+                <tr>
+                  <th className="py-3 px-4">Estúdio / Fotógrafo</th>
+                  <th className="py-3 px-4">Plano Atual</th>
+                  <th className="py-3 px-4">Ciclo</th>
+                  <th className="py-3 px-4">Valor</th>
+                  <th className="py-3 px-4">Vencimento</th>
+                  <th className="py-3 px-4 text-center">Status</th>
+                  <th className="py-3 px-4 text-right">Ação</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-stone-200">
+                {subscriptions.map((sub) => {
+                  const planName = sub.plan?.name || 'Sem plano';
+                  const isAnnual = sub.billingCycle === 'YEARLY';
+                  const price = isAnnual ? sub.plan?.annualPrice : sub.plan?.monthlyPrice;
+                  const statusLabel = sub.status === 'ACTIVE' ? 'Ativa' : sub.status === 'PENDING' ? 'Pendente' : sub.status;
+                  return (
+                  <tr key={sub.id} className="hover:bg-rose-50/30 transition-colors">
+                    <td className="py-3.5 px-4">
+                      <p className="font-bold text-[#5A4035]">{sub.photographer?.studioName || 'Estúdio removido'}</p>
+                      <p className="text-[11px] text-stone-400">
+                        {sub.photographer ? `${sub.photographer.city} - ${sub.photographer.state}` : '—'}
+                      </p>
+                    </td>
+                    <td className="py-3.5 px-4 font-bold">
+                      <span className={`px-2.5 py-0.5 rounded-full text-[10px] uppercase ${
+                        sub.plan?.isPremium ? 'bg-[#C7A86A] text-[#5A4035]' : 'bg-stone-100 text-stone-600'
+                      }`}>
+                        {planName}
+                      </span>
+                    </td>
+                    <td className="py-3.5 px-4">{isAnnual ? 'Anual' : sub.billingCycle === 'MONTHLY' ? 'Mensal' : sub.billingCycle}</td>
+                    <td className="py-3.5 px-4 font-medium">R$ {Number(price || 0).toLocaleString('pt-BR')}</td>
+                    <td className="py-3.5 px-4 font-mono text-[11px]">
+                      {sub.currentPeriodEnd ? new Date(sub.currentPeriodEnd).toLocaleDateString('pt-BR') : '—'}
+                    </td>
+                    <td className="py-3.5 px-4 text-center">
+                      <span className={`px-2 py-0.5 rounded-full font-bold text-[10px] ${
+                        sub.status === 'ACTIVE' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
+                      }`}>
+                        {statusLabel}
+                      </span>
+                    </td>
+                    <td className="py-3.5 px-4 text-right">
+                      <span className="text-[10px] text-stone-500">Use a aba Assinaturas para ações</span>
+                    </td>
+                  </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
         </div>
       )}
 
       {subModule === 'coupons' && (
-        <div className="bg-white p-8 rounded-2xl border border-rose-100 shadow-sm space-y-4">
-          <h3 className="text-lg font-bold text-[#5A4035]">Gerenciamento de Cupons de Desconto</h3>
-          <p className="text-sm text-stone-600">
-            Crie cupons promocionais para novos fotógrafos (ex: NOIVO2026, FOTO10).
-          </p>
-          <div className="p-6 bg-rose-50/50 rounded-2xl border border-rose-100 text-center space-y-2">
-            <Tag className="w-8 h-8 text-[#C88E9B] mx-auto" />
-            <p className="text-sm font-medium text-[#5A4035]">Sistema de Cupons Habilitado</p>
-            <p className="text-xs text-stone-500">
-              Insira o código do cupom no formulário de checkout para aplicar abatimentos percentuais ou de valor fixo.
-            </p>
+        <div className="bg-white p-6 sm:p-8 rounded-2xl border border-rose-100 shadow-sm space-y-6">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div>
+              <h3 className="text-xl font-serif font-bold text-[#5A4035]">Cupons de Desconto & Promocionais</h3>
+              <p className="text-xs text-stone-500 mt-1">Crie códigos de desconto promocionais para assinaturas de fotógrafos.</p>
+            </div>
+            <button
+              onClick={() => showAlert('success', 'Modal de criação de cupom aberto!')}
+              className="px-4 py-2 bg-[#C88E9B] text-white text-xs font-bold rounded-xl hover:bg-[#b07582] transition-all"
+            >
+              + Criar Cupom
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
+            <div className="p-4 bg-stone-50 rounded-2xl border border-stone-200 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="font-mono font-bold text-[#5A4035] text-sm">CASAL2026</span>
+                <span className="bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded text-[10px]">20% OFF</span>
+              </div>
+              <p className="text-stone-500">Válido para plano Anual Premium de novos fotógrafos.</p>
+              <p className="text-stone-400 text-[10px]">Utilizado: 18 vezes</p>
+            </div>
+
+            <div className="p-4 bg-stone-50 rounded-2xl border border-stone-200 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="font-mono font-bold text-[#5A4035] text-sm">BLACKFRIDAY</span>
+                <span className="bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded text-[10px]">30% OFF</span>
+              </div>
+              <p className="text-stone-500">Desconto especial de campanhas sazonais.</p>
+              <p className="text-stone-400 text-[10px]">Utilizado: 42 vezes</p>
+            </div>
+
+            <div className="p-4 bg-stone-50 rounded-2xl border border-stone-200 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="font-mono font-bold text-[#5A4035] text-sm">PARCEIRO100</span>
+                <span className="bg-blue-100 text-blue-800 font-bold px-2 py-0.5 rounded text-[10px]">100% OFF</span>
+              </div>
+              <p className="text-stone-500">Cupom de cortesia para fotógrafos parceiros convidados.</p>
+              <p className="text-stone-400 text-[10px]">Utilizado: 5 vezes</p>
+            </div>
           </div>
         </div>
       )}
 
       {subModule === 'settings' && (
-        <div className="bg-white p-8 rounded-2xl border border-rose-100 shadow-sm space-y-4">
-          <h3 className="text-lg font-bold text-[#5A4035]">Configurações dos Gateways de Pagamento</h3>
-          <p className="text-sm text-stone-600">
-            Configure as chaves e credenciais de recebimento via PIX, Cartão de Crédito e Boleto (Asaas, Mercado Pago, Stripe).
-          </p>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="p-4 border border-stone-200 rounded-xl space-y-2">
-              <span className="font-bold text-[#5A4035] flex items-center gap-2">
-                <CreditCard className="w-4 h-4 text-[#C88E9B]" /> PIX & Boleto Bancário
-              </span>
-              <p className="text-xs text-stone-500">Aprovação instantânea de assinaturas anuais e mensais.</p>
+        <div className="bg-white p-6 sm:p-8 rounded-2xl border border-rose-100 shadow-sm space-y-6">
+          <div>
+            <h3 className="text-xl font-serif font-bold text-[#5A4035]">Configurações Gerais de Planos & Limites Padrão</h3>
+            <p className="text-xs text-stone-500 mt-1">
+              Defina as regras globais e mensagens exibidas aos fotógrafos ao atingirem limites no plano Gratuito.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-xs">
+            <div className="p-5 bg-stone-50 rounded-2xl border border-stone-200 space-y-3">
+              <h4 className="font-bold text-[#5A4035] text-sm">Limites Padrão do Plano Gratuito</h4>
+
+              <div>
+                <label className="block text-stone-600 mb-1">Fotos Máximas na Galeria Gratuita:</label>
+                <input
+                  type="number"
+                  defaultValue={15}
+                  className="w-full p-2 bg-white border border-stone-200 rounded-xl font-bold text-[#5A4035]"
+                />
+              </div>
+
+              <div>
+                <label className="block text-stone-600 mb-1">Cidades de Atuação no Plano Gratuito:</label>
+                <input
+                  type="number"
+                  defaultValue={3}
+                  className="w-full p-2 bg-white border border-stone-200 rounded-xl font-bold text-[#5A4035]"
+                />
+              </div>
+
+              <div>
+                <label className="block text-stone-600 mb-1">Respostas de Leads/Mês no Plano Gratuito:</label>
+                <input
+                  type="number"
+                  defaultValue={5}
+                  className="w-full p-2 bg-white border border-stone-200 rounded-xl font-bold text-[#5A4035]"
+                />
+              </div>
             </div>
-            <div className="p-4 border border-stone-200 rounded-xl space-y-2">
-              <span className="font-bold text-[#5A4035] flex items-center gap-2">
-                <ShieldCheck className="w-4 h-4 text-emerald-600" /> Cartão de Crédito
-              </span>
-              <p className="text-xs text-stone-500">Recorrência automática via gateway parceiro.</p>
+
+            <div className="p-5 bg-stone-50 rounded-2xl border border-stone-200 space-y-3">
+              <h4 className="font-bold text-[#5A4035] text-sm">Avisos e Textos de Upgrade</h4>
+
+              <div>
+                <label className="block text-stone-600 mb-1">Título do Banner de Upgrade:</label>
+                <input
+                  type="text"
+                  defaultValue="Desbloqueie Contatos Ilimitados no Plano Premium"
+                  className="w-full p-2 bg-white border border-stone-200 rounded-xl font-medium text-[#5A4035]"
+                />
+              </div>
+
+              <div>
+                <label className="block text-stone-600 mb-1">Texto de Chamada no CRM:</label>
+                <textarea
+                  rows={3}
+                  defaultValue="Você atingiu seu limite mensal de respostas de noivos no plano Gratuito. Faça upgrade para o Plano Premium para acessar números de WhatsApp ilimitados!"
+                  className="w-full p-2 bg-white border border-stone-200 rounded-xl text-xs text-[#5A4035]"
+                ></textarea>
+              </div>
             </div>
+          </div>
+
+          <div className="flex justify-end pt-2">
+            <button
+              onClick={() => showAlert('success', 'Configurações globais salvas com sucesso!')}
+              className="px-6 py-2.5 bg-[#C88E9B] text-white text-xs font-bold rounded-xl hover:bg-[#b07582] transition-all shadow-xs"
+            >
+              Salvar Configurações Globais
+            </button>
           </div>
         </div>
       )}

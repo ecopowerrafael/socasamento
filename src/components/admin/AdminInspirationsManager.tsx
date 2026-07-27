@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Sparkles, Plus, Search, Edit2, Trash2, Heart, Image as ImageIcon, Loader2, Check } from 'lucide-react';
 import { BrideInspiration } from '../../types';
-import { INITIAL_INSPIRATIONS } from '../../data/brideData';
 
 export const AdminInspirationsManager: React.FC = () => {
   const [inspirations, setInspirations] = useState<BrideInspiration[]>([]);
@@ -10,6 +9,7 @@ export const AdminInspirationsManager: React.FC = () => {
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<BrideInspiration | null>(null);
+  const [error, setError] = useState('');
 
   const [formData, setFormData] = useState({
     title: '',
@@ -23,26 +23,11 @@ export const AdminInspirationsManager: React.FC = () => {
     try {
       const res = await fetch('/api/inspirations');
       const data = await res.json();
-      if (data.success && Array.isArray(data.inspirations) && data.inspirations.length > 0) {
-        setInspirations(data.inspirations);
-      } else {
-        // Fallback local storage or initial data
-        const local = localStorage.getItem('admin_inspirations');
-        if (local) {
-          setInspirations(JSON.parse(local));
-        } else {
-          setInspirations(INITIAL_INSPIRATIONS);
-          localStorage.setItem('admin_inspirations', JSON.stringify(INITIAL_INSPIRATIONS));
-        }
-      }
+      if (!res.ok || !data.success) throw new Error(data.error || 'Não foi possível carregar as inspirações.');
+      setInspirations(Array.isArray(data.inspirations) ? data.inspirations : []);
+      setError('');
     } catch (err) {
-      console.error('Error fetching inspirations:', err);
-      const local = localStorage.getItem('admin_inspirations');
-      if (local) {
-        setInspirations(JSON.parse(local));
-      } else {
-        setInspirations(INITIAL_INSPIRATIONS);
-      }
+      setError(err instanceof Error ? err.message : 'MySQL indisponível.');
     } finally {
       setLoading(false);
     }
@@ -51,11 +36,6 @@ export const AdminInspirationsManager: React.FC = () => {
   useEffect(() => {
     fetchInspirations();
   }, []);
-
-  const saveToLocal = (updated: BrideInspiration[]) => {
-    setInspirations(updated);
-    localStorage.setItem('admin_inspirations', JSON.stringify(updated));
-  };
 
   const handleOpenCreateModal = () => {
     setEditingItem(null);
@@ -82,12 +62,12 @@ export const AdminInspirationsManager: React.FC = () => {
   const handleDelete = async (id: string) => {
     if (!confirm('Deseja realmente excluir esta inspiração do Pinterest interno?')) return;
     try {
-      await fetch(`/api/inspirations/${id}`, { method: 'DELETE' });
+      const response = await fetch(`/api/inspirations/${id}`, { method: 'DELETE' });
+      if (!response.ok) throw new Error('Não foi possível excluir.');
+      await fetchInspirations();
     } catch (e) {
-      // ignore
+      setError(e instanceof Error ? e.message : 'Erro ao excluir.');
     }
-    const updated = inspirations.filter((item) => item.id !== id);
-    saveToLocal(updated);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -107,16 +87,17 @@ export const AdminInspirationsManager: React.FC = () => {
         likesCount: formData.likesCount,
       };
       try {
-        await fetch(`/api/inspirations/${editingItem.id}`, {
+        const response = await fetch(`/api/inspirations/${editingItem.id}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(updatedItem),
         });
+        if (!response.ok) throw new Error('Não foi possível atualizar.');
+        await fetchInspirations();
       } catch (e) {
-        // ignore
+        setError(e instanceof Error ? e.message : 'Erro ao atualizar.');
+        return;
       }
-      const list = inspirations.map((i) => (i.id === editingItem.id ? updatedItem : i));
-      saveToLocal(list);
     } else {
       // Create
       const newItem: BrideInspiration = {
@@ -128,16 +109,17 @@ export const AdminInspirationsManager: React.FC = () => {
         favorited: false,
       };
       try {
-        await fetch('/api/inspirations', {
+        const response = await fetch('/api/inspirations', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(newItem),
         });
+        if (!response.ok) throw new Error('Não foi possível criar.');
+        await fetchInspirations();
       } catch (e) {
-        // ignore
+        setError(e instanceof Error ? e.message : 'Erro ao criar.');
+        return;
       }
-      const list = [newItem, ...inspirations];
-      saveToLocal(list);
     }
 
     setIsModalOpen(false);
@@ -174,6 +156,7 @@ export const AdminInspirationsManager: React.FC = () => {
           <span>Nova Inspiração</span>
         </button>
       </div>
+      {error && <div className="rounded-xl bg-red-50 text-red-700 p-3 text-xs">{error}</div>}
 
       {/* Filters & Search */}
       <div className="flex flex-col md:flex-row gap-3 bg-stone-50 p-4 rounded-xl border border-stone-200">

@@ -4,7 +4,6 @@ import { HeroSearch } from './components/HeroSearch';
 import { PhotographerCard } from './components/PhotographerCard';
 import { SearchDirectoryView } from './components/SearchDirectoryView';
 import { PhotographerProfileView } from './components/PhotographerProfileView';
-import { CitySEOView } from './components/CitySEOView';
 import { ComparePhotographersView } from './components/ComparePhotographersView';
 import { RecentWeddingsFeed } from './components/RecentWeddingsFeed';
 import { ToolsCoupleView } from './components/ToolsCoupleView';
@@ -15,10 +14,12 @@ import { AdminDashboard } from './components/AdminDashboard';
 import { BrazilMapStateBrowser } from './components/BrazilMapStateBrowser';
 import { MultiQuoteModal } from './components/MultiQuoteModal';
 import { AuthView } from './components/AuthView';
+import { BrideSignupView } from './components/BrideSignupView';
 import { AccessDeniedView } from './components/AccessDeniedView';
 import { Footer } from './components/Footer';
+import { NotificationsView } from './components/NotificationsView';
+import { PwaInstallPrompt } from './components/PwaInstallPrompt';
 
-import { CITY_SEO_PAGES } from './data/mockData';
 import { Photographer, CategoryType, PricingPackage, UserSession } from './types';
 import { Sparkles, Quote, RefreshCw } from 'lucide-react';
 
@@ -40,6 +41,7 @@ export default function App() {
     }
 
     if (path === '/login' || hash === 'login') return { view: 'login' };
+    if (path === '/cadastro-noiva' || hash === 'cadastro-noiva') return { view: 'cadastro-noiva' };
     if (path === '/cadastrar-estudio' || hash === 'register') return { view: 'cadastrar-estudio' };
     if (path === '/esqueci-minha-senha' || hash === 'forgot') return { view: 'esqueci-minha-senha' };
     if (path === '/redefinir-senha' || hash === 'reset') return { view: 'redefinir-senha' };
@@ -50,8 +52,9 @@ export default function App() {
     if (path === '/planos' || path === '/anunciar' || hash === 'plans' || hash === 'planos') return { view: 'plans' };
     if (path === '/comparar' || hash === 'compare') return { view: 'compare' };
     if (path === '/casamentos' || hash === 'weddings') return { view: 'weddings' };
-    if (path === '/ferramentas' || hash === 'tools') return { view: 'tools' };
+    if (path === '/ferramentas' || path === '/portal-do-casal' || hash === 'tools' || hash === 'portal-do-casal') return { view: 'tools' };
     if (path === '/fotografos' || path === '/buscar' || hash === 'directory') return { view: 'directory' };
+    if (path === '/notificacoes' || hash === 'notificacoes') return { view: 'notifications' };
 
     if (path.startsWith('/fotografo/')) {
       const slug = path.replace('/fotografo/', '');
@@ -78,7 +81,7 @@ export default function App() {
   const [photographersList, setPhotographersList] = useState<Photographer[]>([]);
   const [recentWeddings, setRecentWeddings] = useState<any[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
-  const [favorites, setFavorites] = useState<string[]>(['1', '2']);
+  const [favorites, setFavorites] = useState<string[]>([]);
   const [comparedIds, setComparedIds] = useState<string[]>([]);
 
   // Multi Quote Modal state
@@ -134,6 +137,7 @@ export default function App() {
 
     let path = '/';
     if (view === 'login') path = '/login';
+    else if (view === 'cadastro-noiva') path = '/cadastro-noiva';
     else if (view === 'cadastrar-estudio') path = '/cadastrar-estudio';
     else if (view === 'esqueci-minha-senha') path = '/esqueci-minha-senha';
     else if (view === 'redefinir-senha') path = '/redefinir-senha';
@@ -143,8 +147,9 @@ export default function App() {
     else if (view === 'plans') path = '/planos';
     else if (view === 'compare') path = '/comparar';
     else if (view === 'weddings') path = '/casamentos';
-    else if (view === 'tools') path = '/ferramentas';
+    else if (view === 'tools') path = '/portal-do-casal';
     else if (view === 'directory') path = '/fotografos';
+    else if (view === 'notifications') path = '/notificacoes';
     else if (view === 'profile' && slug) path = `/fotografo/${slug}`;
 
     if (window.location.pathname !== path) {
@@ -162,6 +167,8 @@ export default function App() {
       navigateToView('admin-panel');
     } else if (user.role === 'photographer') {
       navigateToView('photographer-panel');
+    } else if (user.role === 'bride' || user.role === 'client') {
+      navigateToView('tools');
     } else {
       navigateToView('home');
     }
@@ -214,10 +221,39 @@ export default function App() {
     fetchWeddings();
   }, []);
 
+  useEffect(() => {
+    if (!userSession) {
+      setFavorites([]);
+      return;
+    }
+    fetch('/api/favorites')
+      .then(async (response) => {
+        const body = await response.json();
+        if (!response.ok || body.success === false) throw new Error(body.error || 'Erro ao carregar favoritos.');
+        setFavorites((body.favorites || []).map((photographer: any) => String(photographer.id)));
+      })
+      .catch((error) => console.error('Erro ao carregar favoritos do MySQL:', error));
+  }, [userSession]);
+
   // Toggle Favorite
   const toggleFavorite = async (id: string) => {
-    setFavorites((prev) =>
-      prev.includes(id) ? prev.filter((f) => f !== id) : [...prev, id]
+    if (!userSession) {
+      navigateToView('login');
+      return;
+    }
+    const isFavorite = favorites.includes(id);
+    const response = await fetch(isFavorite ? `/api/favorites/${id}` : '/api/favorites', {
+      method: isFavorite ? 'DELETE' : 'POST',
+      headers: isFavorite ? undefined : { 'Content-Type': 'application/json' },
+      body: isFavorite ? undefined : JSON.stringify({ photographerId: id }),
+    });
+    const body = await response.json();
+    if (!response.ok || body.success === false) {
+      alert(body.error || 'Não foi possível atualizar o favorito.');
+      return;
+    }
+    setFavorites((previous) =>
+      isFavorite ? previous.filter((favoriteId) => favoriteId !== id) : [...previous, id]
     );
   };
 
@@ -258,13 +294,7 @@ export default function App() {
   const handleSearchCitySubmit = (city: string) => {
     setSelectedCity(city);
 
-    // Check if city matches SEO page
-    const seoPage = CITY_SEO_PAGES.find((p) => p.city.toLowerCase() === city.toLowerCase());
-    if (seoPage) {
-      navigateToView(`city-${seoPage.city.toLowerCase()}`);
-    } else {
-      navigateToView('directory');
-    }
+    navigateToView('directory');
   };
 
   // Admin Badge Toggle Handler
@@ -495,6 +525,10 @@ export default function App() {
           </div>
         )}
 
+        {currentView === 'notifications' && (
+          userSession ? <NotificationsView /> : <AuthView initialMode="login" onLoginSuccess={handleLoginSuccess} onNavigateHome={() => navigateToView('home')} />
+        )}
+
         {/* VIEW 2: DIRECTORY & SEARCH */}
         {currentView === 'directory' && (
           <SearchDirectoryView
@@ -523,25 +557,6 @@ export default function App() {
           />
         )}
 
-        {/* VIEW 4: CITY SEO VIEWS */}
-        {currentView.startsWith('city-') && (
-          <CitySEOView
-            cityData={
-              CITY_SEO_PAGES.find((p) => `city-${p.city.toLowerCase()}` === currentView) ||
-              CITY_SEO_PAGES[0]
-            }
-            photographers={photographersList}
-            recentWeddings={recentWeddings}
-            onViewProfile={handleViewProfile}
-            onOpenQuote={handleOpenQuoteModal}
-            favorites={favorites}
-            onToggleFavorite={toggleFavorite}
-            comparedIds={comparedIds}
-            onToggleCompare={toggleCompare}
-            openMultiQuote={() => handleOpenQuoteModal()}
-          />
-        )}
-
         {/* VIEW 5: COMPARE PHOTOGRAPHERS */}
         {currentView === 'compare' && (
           <ComparePhotographersView
@@ -565,9 +580,25 @@ export default function App() {
           />
         )}
 
-        {/* VIEW 7: TOOLS FOR COUPLES */}
+        {/* VIEW 7: TOOLS FOR COUPLES / PORTAL DO CASAL */}
         {currentView === 'tools' && (
-          <ToolsCoupleView openMultiQuote={() => handleOpenQuoteModal()} />
+          <ToolsCoupleView
+            userSession={userSession}
+            onNavigateLogin={() => navigateToView('login')}
+            onNavigateRegister={() => navigateToView('cadastro-noiva')}
+            openMultiQuote={() => handleOpenQuoteModal()}
+          />
+        )}
+
+        {/* CADASTRO DA NOIVA */}
+        {currentView === 'cadastro-noiva' && (
+          <BrideSignupView
+            onSuccess={(user) => {
+              setUserSession(user);
+              navigateToView('tools');
+            }}
+            onNavigateLogin={() => navigateToView('login')}
+          />
         )}
 
         {/* VIEW 8: BLOG SEO */}
@@ -594,6 +625,7 @@ export default function App() {
             }
             onLoginSuccess={handleLoginSuccess}
             onNavigateHome={() => navigateToView('home')}
+            onNavigateBrideRegister={() => navigateToView('cadastro-noiva')}
           />
         )}
 
@@ -662,6 +694,7 @@ export default function App() {
           )
         )}
       </main>
+      <PwaInstallPrompt authenticated={Boolean(userSession)} />
 
       {/* Footer */}
       <Footer

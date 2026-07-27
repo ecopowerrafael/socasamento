@@ -42,29 +42,28 @@ import {
   BridePhotoLocation,
   BrideGamificationBadge,
   ChecklistItem,
-  Photographer
+  Photographer,
+  UserSession,
 } from '../types';
-import {
-  INITIAL_BRIDE_GUESTS,
-  INITIAL_BRIDE_GIFTS,
-  INITIAL_BRIDE_EXPENSES,
-  INITIAL_CALENDAR_EVENTS,
-  INITIAL_INSPIRATIONS,
-  PHOTO_LOCATIONS,
-  INITIAL_TIMELINE_ITEMS,
-  GAMIFICATION_BADGES
-} from '../data/brideData';
-import { INITIAL_CHECKLIST, MOCK_PHOTOGRAPHERS } from '../data/mockData';
 
 interface ToolsCoupleViewProps {
+  userSession?: UserSession | null;
+  onNavigateLogin?: () => void;
+  onNavigateRegister?: () => void;
   openMultiQuote?: () => void;
   photographers?: Photographer[];
 }
 
 export const ToolsCoupleView: React.FC<ToolsCoupleViewProps> = ({
+  userSession,
+  onNavigateLogin,
+  onNavigateRegister,
   openMultiQuote,
-  photographers = MOCK_PHOTOGRAPHERS
+  photographers = []
 }) => {
+  const [isSavePromptOpen, setIsSavePromptOpen] = useState<boolean>(false);
+  const [dbLoading, setDbLoading] = useState<boolean>(false);
+  const [dataError, setDataError] = useState<string>('');
   // Main Active Tab
   const [activeTab, setActiveTab] = useState<
     | 'dashboard'
@@ -83,28 +82,21 @@ export const ToolsCoupleView: React.FC<ToolsCoupleViewProps> = ({
   >('dashboard');
 
   // --- PERSISTENT STATES ---
-  const [weddingDate, setWeddingDate] = useState<string>('2026-11-15');
-  const [checklist, setChecklist] = useState<ChecklistItem[]>(INITIAL_CHECKLIST);
-  const [guests, setGuests] = useState<BrideGuest[]>(INITIAL_BRIDE_GUESTS);
-  const [gifts, setGifts] = useState<BrideGift[]>(INITIAL_BRIDE_GIFTS);
-  const [expenses, setExpenses] = useState<BrideExpense[]>(INITIAL_BRIDE_EXPENSES);
-  const [calendarEvents, setCalendarEvents] = useState<BrideCalendarEvent[]>(INITIAL_CALENDAR_EVENTS);
-  const [inspirations, setInspirations] = useState<BrideInspiration[]>(INITIAL_INSPIRATIONS);
-  const [timelineItems, setTimelineItems] = useState(INITIAL_TIMELINE_ITEMS);
-  const [badges, setBadges] = useState<BrideGamificationBadge[]>(GAMIFICATION_BADGES);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [weddingDate, setWeddingDate] = useState<string>('');
+  const [checklist, setChecklist] = useState<ChecklistItem[]>([]);
+  const [guests, setGuests] = useState<BrideGuest[]>([]);
+  const [gifts, setGifts] = useState<BrideGift[]>([]);
+  const [expenses, setExpenses] = useState<BrideExpense[]>([]);
+  const [calendarEvents, setCalendarEvents] = useState<BrideCalendarEvent[]>([]);
+  const [inspirations, setInspirations] = useState<BrideInspiration[]>([]);
+  const [photoLocations, setPhotoLocations] = useState<BridePhotoLocation[]>([]);
+  const [timelineItems, setTimelineItems] = useState<any[]>([]);
+  const [badges, setBadges] = useState<BrideGamificationBadge[]>([]);
 
   // --- FINANCE CALCULATOR STATE ---
-  const [totalBudgetInput, setTotalBudgetInput] = useState<number>(80000);
-  const [budgetPercentages, setBudgetPercentages] = useState<{ [key: string]: number }>({
-    Fotografia: 12,
-    Buffet: 35,
-    Vestido: 10,
-    Decoração: 15,
-    Música: 8,
-    Convites: 2,
-    Cerimonial: 8,
-    Outros: 10,
-  });
+  const [totalBudgetInput, setTotalBudgetInput] = useState<number>(0);
+  const [budgetPercentages, setBudgetPercentages] = useState<{ [key: string]: number }>({});
 
   // Installment simulator input
   const [supplierQuoteInput, setSupplierQuoteInput] = useState<number>(4500);
@@ -125,57 +117,377 @@ export const ToolsCoupleView: React.FC<ToolsCoupleViewProps> = ({
   const [quizResult, setQuizResult] = useState<string | null>(null);
 
   // --- WEDDING SITE STATE ---
-  const [siteNames, setSiteNames] = useState('Camila & Fernando');
-  const [siteStory, setSiteStory] = useState('Nos conhecemos em 2021 durante uma viagem e desde então soubemos que nosso destino era caminhar juntos. O pedido de casamento aconteceu em um pôr do sol inesquecível!');
-  const [siteVenue, setSiteVenue] = useState('Fazenda Roseiras e Lago Imperial');
-  const [siteAddress, setSiteAddress] = useState('Rodovia Piracicaba - Anhumas, Km 12 - Piracicaba/SP');
+  const [siteNames, setSiteNames] = useState('');
+  const [siteStory, setSiteStory] = useState('');
+  const [siteVenue, setSiteVenue] = useState('');
+  const [siteAddress, setSiteAddress] = useState('');
 
-  // Load from localStorage on mount if available
-  useEffect(() => {
-    try {
-      const savedGuests = localStorage.getItem('bride_guests');
-      if (savedGuests) setGuests(JSON.parse(savedGuests));
+  const requireBrideLogin = () => {
+    if (userSession) return true;
+    setIsSavePromptOpen(true);
+    return false;
+  };
 
-      const savedExpenses = localStorage.getItem('bride_expenses');
-      if (savedExpenses) setExpenses(JSON.parse(savedExpenses));
-
-      const savedGifts = localStorage.getItem('bride_gifts');
-      if (savedGifts) setGifts(JSON.parse(savedGifts));
-
-      const savedEvents = localStorage.getItem('bride_calendar');
-      if (savedEvents) setCalendarEvents(JSON.parse(savedEvents));
-
-      const savedChecklist = localStorage.getItem('bride_checklist');
-      if (savedChecklist) setChecklist(JSON.parse(savedChecklist));
-    } catch (e) {
-      console.error('Error loading bride toolkit local storage:', e);
+  const requestJson = async (url: string, options?: RequestInit) => {
+    const response = await fetch(url, options);
+    const body = await response.json();
+    if (!response.ok || body.success === false) {
+      throw new Error(body.error || 'Não foi possível acessar os dados no MySQL.');
     }
+    return body;
+  };
+
+  useEffect(() => {
+    const loadPublicCatalogs = async () => {
+      try {
+        const [inspirationData, locationData] = await Promise.all([
+          requestJson('/api/inspirations'),
+          requestJson('/api/photo-locations'),
+        ]);
+        setInspirations(
+          (inspirationData.inspirations || []).map((item: any) => ({
+            id: String(item.id),
+            title: item.title,
+            category: item.category,
+            imageUrl: item.imageUrl,
+            likesCount: Number(item.likesCount || 0),
+            favorited: false,
+          }))
+        );
+        setPhotoLocations(
+          (locationData.locations || []).map((location: any) => ({
+            id: String(location.id),
+            name: location.name,
+            category: location.category,
+            city: location.city,
+            state: location.state,
+            coverImage: location.coverImage,
+            idealTime: location.idealTime,
+            needAuthorization: Boolean(location.needAuthorization),
+            feeInfo: location.feeInfo || undefined,
+            description: location.description,
+            address: location.address || undefined,
+          }))
+        );
+      } catch (err) {
+        setDataError(err instanceof Error ? err.message : 'Não foi possível carregar os catálogos.');
+      }
+    };
+    loadPublicCatalogs();
   }, []);
 
-  // Sync to localStorage
-  const updateGuests = (list: BrideGuest[]) => {
-    setGuests(list);
-    localStorage.setItem('bride_guests', JSON.stringify(list));
+  // Catálogos públicos e dados pessoais são sempre carregados do MySQL.
+  useEffect(() => {
+    if (!userSession) {
+      setChecklist([]);
+      setGuests([]);
+      setExpenses([]);
+      setGifts([]);
+      setCalendarEvents([]);
+      setTimelineItems([]);
+      setBadges([]);
+      return;
+    }
+
+    // Authenticated user - Load real MySQL database records
+    const fetchBrideData = async () => {
+      try {
+        setDbLoading(true);
+        setDataError('');
+        // Profile
+        const profRes = await fetch('/api/bride/profile');
+        const profData = await profRes.json();
+        if (profData.success && profData.profile?.weddingDate) {
+          setWeddingDate(String(profData.profile.weddingDate).split('T')[0]);
+        }
+
+        // Tasks
+        const tasksRes = await fetch('/api/bride/tasks');
+        const tasksData = await tasksRes.json();
+        if (tasksData.success && Array.isArray(tasksData.tasks)) {
+          setChecklist(
+            tasksData.tasks.map((t: any) => ({
+              id: String(t.id),
+              task: t.title,
+              category: t.category || 'Fotografia',
+              timeframe: t.recommendedMonth || 'Personalizado',
+              completed: Boolean(t.isCompleted),
+            }))
+          );
+        }
+
+        // Expenses
+        const expensesRes = await fetch('/api/bride/expenses');
+        const expensesData = await expensesRes.json();
+        if (expensesData.success && Array.isArray(expensesData.expenses)) {
+          setExpenses(
+            expensesData.expenses.map((e: any) => ({
+              id: String(e.id),
+              supplier: e.supplierName,
+              category: e.category,
+              amount: parseFloat(e.contractedAmount || '0'),
+              paidAmount: parseFloat(e.paidAmount || '0'),
+              dueDate: e.dueDate || '',
+            }))
+          );
+        }
+
+        // Guests
+        const guestsRes = await fetch('/api/bride/guests');
+        const guestsData = await guestsRes.json();
+        if (guestsData.success && Array.isArray(guestsData.guests)) {
+          setGuests(
+            guestsData.guests.map((g: any) => ({
+              id: String(g.id),
+              name: g.name,
+              phone: g.phone || '',
+              family: g.familyGroup || 'Geral',
+              status: g.confirmationStatus === 'confirmed' ? 'confirmado' : g.confirmationStatus === 'declined' ? 'recusado' : 'pendente',
+              companionCount: g.companions || 0,
+              tableNumber: g.tableName || '',
+            }))
+          );
+        }
+
+        // Gifts
+        const giftsRes = await fetch('/api/bride/gifts');
+        const giftsData = await giftsRes.json();
+        if (giftsData.success && Array.isArray(giftsData.gifts)) {
+          setGifts(
+            giftsData.gifts.map((g: any) => ({
+              id: String(g.id),
+              title: g.name,
+              value: parseFloat(g.estimatedValue || '0'),
+              category: g.description || 'Geral',
+              purchased: Boolean(g.isPurchased),
+              givenBy: g.purchasedBy || undefined,
+              imageUrl: g.image || undefined,
+            }))
+          );
+        }
+
+        // Events
+        const eventsRes = await fetch('/api/bride/events');
+        const eventsData = await eventsRes.json();
+        if (eventsData.success && Array.isArray(eventsData.events)) {
+          setCalendarEvents(
+            eventsData.events.map((ev: any) => ({
+              id: String(ev.id),
+              title: ev.title,
+              date: ev.startAt ? ev.startAt.split('T')[0] : '',
+              time: ev.startAt && ev.startAt.includes('T') ? ev.startAt.split('T')[1].substring(0, 5) : '09:00',
+              type: ev.eventType || 'Outros',
+              location: ev.location || undefined,
+              notify: Boolean(ev.reminderEnabled),
+              notes: ev.description || undefined,
+            }))
+          );
+        }
+
+        // Timeline
+        const timelineRes = await fetch('/api/bride/timeline');
+        const timelineData = await timelineRes.json();
+        if (timelineData.success && Array.isArray(timelineData.items)) {
+          setTimelineItems(
+            timelineData.items.map((item: any) => ({
+              id: String(item.id),
+              time: item.time,
+              title: item.title,
+              desc: item.description || '',
+              icon: 'Clock',
+            }))
+          );
+        }
+
+        // Website
+        const siteRes = await fetch('/api/bride/wedding-website');
+        const siteData = await siteRes.json();
+        if (siteData.success && siteData.website) {
+          if (siteData.website.coupleNames) setSiteNames(siteData.website.coupleNames);
+          if (siteData.website.story) setSiteStory(siteData.website.story);
+          if (siteData.website.ceremonyLocation) setSiteVenue(siteData.website.ceremonyLocation);
+          if (siteData.website.receptionLocation) setSiteAddress(siteData.website.receptionLocation);
+        }
+
+        const [budgetData, achievementsData, favoritesData] = await Promise.all([
+          requestJson('/api/bride/budget'),
+          requestJson('/api/bride/achievements'),
+          requestJson('/api/bride/favorites/inspirations'),
+        ]);
+        if (budgetData.budget) {
+          setTotalBudgetInput(parseFloat(budgetData.budget.totalBudget || '0'));
+        }
+        if (Array.isArray(budgetData.categories)) {
+          setBudgetPercentages(
+            Object.fromEntries(
+              budgetData.categories.map((category: any) => [
+                category.categoryName,
+                parseFloat(category.percentage || '0'),
+              ])
+            )
+          );
+        }
+        setBadges(
+          (achievementsData.achievements || []).map((achievement: any) => ({
+            id: String(achievement.id),
+            title: achievement.name,
+            icon: achievement.icon || 'Award',
+            unlocked: Boolean(achievement.unlocked),
+            description: achievement.description || '',
+          }))
+        );
+        const favoriteIds = new Set(
+          (favoritesData.favorites || []).map((favorite: any) => String(favorite.inspirationId))
+        );
+        setInspirations((items) =>
+          items.map((item) => ({ ...item, favorited: favoriteIds.has(item.id) }))
+        );
+        const quizData = await requestJson('/api/bride/quiz');
+        if (quizData.quizResult) {
+          setQuizResult(quizData.quizResult.resultStyle || null);
+          const storedAnswers = quizData.quizResult.answersJson;
+          setQuizAnswers(Array.isArray(storedAnswers) ? storedAnswers : []);
+        }
+      } catch (err) {
+        console.error('Erro ao carregar dados do banco MySQL:', err);
+        setDataError(err instanceof Error ? err.message : 'Não foi possível carregar os dados do MySQL.');
+      } finally {
+        setDbLoading(false);
+      }
+    };
+
+    fetchBrideData();
+  }, [userSession]);
+
+  const updateGuests = async (list: BrideGuest[]) => {
+    if (!requireBrideLogin()) return;
+    const added = list.find((item) => !guests.some((current) => current.id === item.id));
+    if (!added) return;
+    try {
+      const result = await requestJson('/api/bride/guests', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: added.name,
+          phone: added.phone,
+          familyGroup: added.family,
+          companions: added.companionCount,
+          tableName: added.tableNumber,
+          confirmationStatus: added.status === 'confirmado' ? 'confirmed' : added.status === 'recusado' ? 'declined' : 'pending',
+        }),
+      });
+      setGuests([...guests, { ...added, id: String(result.guest.id) }]);
+    } catch (err) {
+      setDataError(err instanceof Error ? err.message : 'Erro ao salvar convidado.');
+    }
   };
 
-  const updateExpenses = (list: BrideExpense[]) => {
-    setExpenses(list);
-    localStorage.setItem('bride_expenses', JSON.stringify(list));
+  const updateExpenses = async (list: BrideExpense[]) => {
+    if (!requireBrideLogin()) return;
+    const added = list.find((item) => !expenses.some((current) => current.id === item.id));
+    if (!added) return;
+    try {
+      const result = await requestJson('/api/bride/expenses', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          supplierName: added.supplier,
+          category: added.category,
+          contractedAmount: added.amount,
+          paidAmount: added.paidAmount,
+          dueDate: added.dueDate,
+        }),
+      });
+      setExpenses([...expenses, { ...added, id: String(result.expense.id) }]);
+    } catch (err) {
+      setDataError(err instanceof Error ? err.message : 'Erro ao salvar despesa.');
+    }
   };
 
-  const updateGifts = (list: BrideGift[]) => {
-    setGifts(list);
-    localStorage.setItem('bride_gifts', JSON.stringify(list));
+  const updateGifts = async (list: BrideGift[]) => {
+    if (!requireBrideLogin()) return;
+    const added = list.find((item) => !gifts.some((current) => current.id === item.id));
+    if (!added) return;
+    try {
+      const result = await requestJson('/api/bride/gifts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: added.title,
+          description: added.category,
+          estimatedValue: added.value,
+          image: added.imageUrl,
+        }),
+      });
+      setGifts([...gifts, { ...added, id: String(result.gift.id) }]);
+    } catch (err) {
+      setDataError(err instanceof Error ? err.message : 'Erro ao salvar presente.');
+    }
   };
 
-  const updateEvents = (list: BrideCalendarEvent[]) => {
-    setCalendarEvents(list);
-    localStorage.setItem('bride_calendar', JSON.stringify(list));
+  const updateEvents = async (list: BrideCalendarEvent[]) => {
+    if (!requireBrideLogin()) return;
+    const added = list.find((item) => !calendarEvents.some((current) => current.id === item.id));
+    const removed = calendarEvents.find((item) => !list.some((current) => current.id === item.id));
+    try {
+      if (added) {
+        const result = await requestJson('/api/bride/events', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            title: added.title,
+            description: added.notes,
+            eventType: added.type,
+            location: added.location,
+            startAt: `${added.date}T${added.time}:00`,
+            reminderEnabled: added.notify,
+          }),
+        });
+        setCalendarEvents([...calendarEvents, { ...added, id: String(result.event.id) }]);
+      } else if (removed) {
+        await requestJson(`/api/bride/events/${removed.id}`, { method: 'DELETE' });
+        setCalendarEvents(list);
+      }
+    } catch (err) {
+      setDataError(err instanceof Error ? err.message : 'Erro ao salvar compromisso.');
+    }
   };
 
-  const updateChecklist = (list: ChecklistItem[]) => {
-    setChecklist(list);
-    localStorage.setItem('bride_checklist', JSON.stringify(list));
+  const saveBudget = async () => {
+    if (!requireBrideLogin()) return;
+    try {
+      await requestJson('/api/bride/budget', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ totalBudget: totalBudgetInput }),
+      });
+    } catch (err) {
+      setDataError(err instanceof Error ? err.message : 'Erro ao salvar orçamento.');
+    }
+  };
+
+  const saveWeddingWebsite = async () => {
+    if (!requireBrideLogin()) return;
+    try {
+      const result = await requestJson('/api/bride/wedding-website', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          coupleNames: siteNames,
+          story: siteStory,
+          weddingDate,
+          ceremonyLocation: siteVenue,
+          receptionLocation: siteAddress,
+          isPublished: true,
+          rsvpEnabled: true,
+        }),
+      });
+      const publicSlug = result.website?.slug || encodeURIComponent(siteNames);
+      await navigator.clipboard?.writeText(`${window.location.origin}/casal/${publicSlug}`);
+      alert('Site salvo no MySQL e link copiado.');
+    } catch (err) {
+      setDataError(err instanceof Error ? err.message : 'Erro ao salvar o site do casamento.');
+    }
   };
 
   // --- CALCULATION HELPERS ---
@@ -207,20 +519,52 @@ export const ToolsCoupleView: React.FC<ToolsCoupleViewProps> = ({
     .reduce((acc, g) => acc + 1 + (g.companionCount || 0), 0);
 
   // Toggle checklist
-  const handleToggleChecklist = (id: string) => {
-    const updated = checklist.map((item) =>
-      item.id === id ? { ...item, completed: !item.completed } : item
-    );
-    updateChecklist(updated);
+  const handleToggleChecklist = async (id: string) => {
+    if (!requireBrideLogin()) return;
+    try {
+      const result = await requestJson(`/api/bride/tasks/${id}/complete`, { method: 'PATCH' });
+      setChecklist((items) =>
+        items.map((item) => item.id === id ? { ...item, completed: Boolean(result.task.isCompleted) } : item)
+      );
+    } catch (err) {
+      setDataError(err instanceof Error ? err.message : 'Erro ao atualizar tarefa.');
+    }
   };
 
   // Toggle Inspiration Favorite
-  const handleToggleInspirationFav = (id: string) => {
-    setInspirations((prev) =>
-      prev.map((item) =>
-        item.id === id ? { ...item, favorited: !item.favorited, likesCount: item.favorited ? item.likesCount - 1 : item.likesCount + 1 } : item
-      )
-    );
+  const handleToggleInspirationFav = async (id: string) => {
+    if (!requireBrideLogin()) return;
+    const item = inspirations.find((inspiration) => inspiration.id === id);
+    if (!item) return;
+    try {
+      if (item.favorited) {
+        await requestJson(`/api/bride/favorites/inspirations/${id}`, { method: 'DELETE' });
+      } else {
+        await requestJson('/api/bride/favorites/inspirations', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            inspirationId: id,
+            title: item.title,
+            category: item.category,
+            imageUrl: item.imageUrl,
+          }),
+        });
+      }
+      setInspirations((items) =>
+        items.map((inspiration) =>
+          inspiration.id === id
+            ? {
+                ...inspiration,
+                favorited: !inspiration.favorited,
+                likesCount: Math.max(0, inspiration.likesCount + (inspiration.favorited ? -1 : 1)),
+              }
+            : inspiration
+        )
+      );
+    } catch (err) {
+      setDataError(err instanceof Error ? err.message : 'Erro ao atualizar favorito.');
+    }
   };
 
   // Run Simulator
@@ -271,7 +615,7 @@ export const ToolsCoupleView: React.FC<ToolsCoupleViewProps> = ({
     },
   ];
 
-  const handleSelectQuizOption = (styleChoice: string) => {
+  const handleSelectQuizOption = async (styleChoice: string) => {
     const nextAnswers = [...quizAnswers, styleChoice];
     setQuizAnswers(nextAnswers);
     if (quizStep + 1 < QUIZ_QUESTIONS.length) {
@@ -289,11 +633,31 @@ export const ToolsCoupleView: React.FC<ToolsCoupleViewProps> = ({
         }
       });
       setQuizResult(maxStyle);
+      if (requireBrideLogin()) {
+        try {
+          await requestJson('/api/bride/quiz', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              answersJson: nextAnswers,
+              resultStyle: maxStyle,
+              scoreJson: counts,
+            }),
+          });
+        } catch (err) {
+          setDataError(err instanceof Error ? err.message : 'Erro ao salvar o resultado do quiz.');
+        }
+      }
     }
   };
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
+      {dataError && (
+        <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
+          {dataError}
+        </div>
+      )}
       
       {/* Header Portal do Casal */}
       <div className="bg-gradient-to-r from-[#5A4035] via-[#6d4f43] to-[#5A4035] text-white rounded-3xl p-6 sm:p-8 shadow-xl relative overflow-hidden">
@@ -367,6 +731,29 @@ export const ToolsCoupleView: React.FC<ToolsCoupleViewProps> = ({
       {/* ==================================================================== */}
       {activeTab === 'dashboard' && (
         <div className="space-y-8 animate-fade-in">
+
+          {/* Profile Completion Card */}
+          <div className="bg-gradient-to-r from-rose-50 via-amber-50/50 to-white p-5 rounded-3xl border border-[#C88E9B]/30 shadow-xs flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 bg-[#C88E9B] text-white rounded-2xl flex items-center justify-center font-bold text-lg shrink-0 shadow-sm">
+                45%
+              </div>
+              <div>
+                <h3 className="font-serif font-bold text-[#5A4035] text-base">Complete o Perfil do seu Casamento</h3>
+                <p className="text-xs text-stone-600">
+                  Adicione o local exato, número de convidados e teto de orçamento para receber estimativas e propostas precisas dos estúdios.
+                </p>
+              </div>
+            </div>
+
+            <button
+              onClick={() => setIsEditModalOpen(true)}
+              className="px-5 py-2.5 bg-[#5A4035] hover:bg-[#C88E9B] text-white font-bold text-xs rounded-xl transition-all shrink-0 shadow-xs"
+            >
+              Completar Perfil Agora →
+            </button>
+          </div>
+
           {/* Top Metric Cards */}
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
             <div className="bg-white p-5 rounded-2xl border border-stone-200 shadow-xs space-y-1">
@@ -610,12 +997,15 @@ export const ToolsCoupleView: React.FC<ToolsCoupleViewProps> = ({
                 onClick={() => {
                   const title = prompt('Título do compromisso:');
                   if (title) {
+                    const date = prompt('Data do compromisso (AAAA-MM-DD):', new Date().toISOString().slice(0, 10));
+                    const time = prompt('Horário (HH:MM):', '09:00');
+                    if (!date || !time) return;
                     const newEv: BrideCalendarEvent = {
                       id: String(Date.now()),
                       title,
                       type: 'Reunião com fotógrafo',
-                      date: '2026-09-15',
-                      time: '15:00',
+                      date,
+                      time,
                       notify: true,
                     };
                     updateEvents([...calendarEvents, newEv]);
@@ -684,6 +1074,7 @@ export const ToolsCoupleView: React.FC<ToolsCoupleViewProps> = ({
                 step={1000}
                 value={totalBudgetInput}
                 onChange={(e) => setTotalBudgetInput(Number(e.target.value))}
+                onBlur={saveBudget}
                 className="w-full text-xs p-2 bg-stone-50 border border-stone-200 rounded-xl font-bold mt-2"
               />
             </div>
@@ -740,13 +1131,15 @@ export const ToolsCoupleView: React.FC<ToolsCoupleViewProps> = ({
                   const supplier = prompt('Nome do Fornecedor:');
                   const amount = Number(prompt('Valor contratado (R$):') || '0');
                   if (supplier && amount > 0) {
+                    const paidAmount = Number(prompt('Valor já pago (R$):', '0') || '0');
+                    const dueDate = prompt('Data de vencimento (AAAA-MM-DD):', '') || '';
                     const newExp: BrideExpense = {
                       id: String(Date.now()),
                       category: 'Outros',
                       supplier,
                       amount,
-                      paidAmount: Math.round(amount / 2),
-                      dueDate: '2026-10-01',
+                      paidAmount,
+                      dueDate,
                     };
                     updateExpenses([...expenses, newExp]);
                   }
@@ -846,14 +1239,18 @@ export const ToolsCoupleView: React.FC<ToolsCoupleViewProps> = ({
                 onClick={() => {
                   const name = prompt('Nome do Convidado:');
                   if (name) {
+                    const phone = prompt('Telefone do convidado:', '') || '';
+                    const family = prompt('Família ou grupo:', '') || '';
+                    const companionCount = Number(prompt('Quantidade de acompanhantes:', '0') || '0');
+                    const tableNumber = prompt('Mesa (opcional):', '') || '';
                     const newGuest: BrideGuest = {
                       id: String(Date.now()),
                       name,
-                      phone: '(19) 99999-8888',
-                      family: 'Amigos',
+                      phone,
+                      family,
                       status: 'pendente',
-                      companionCount: 1,
-                      tableNumber: 'Mesa A',
+                      companionCount,
+                      tableNumber,
                     };
                     updateGuests([...guests, newGuest]);
                   }
@@ -1016,7 +1413,7 @@ export const ToolsCoupleView: React.FC<ToolsCoupleViewProps> = ({
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              {PHOTO_LOCATIONS.map((loc) => (
+              {photoLocations.map((loc) => (
                 <div key={loc.id} className="bg-stone-50 rounded-2xl border border-stone-200 overflow-hidden shadow-2xs space-y-3 p-4">
                   <img src={loc.coverImage} alt={loc.name} className="w-full h-44 object-cover rounded-xl" />
                   <span className="inline-block px-2.5 py-0.5 bg-[#5A4035] text-white text-[10px] font-bold uppercase rounded-full">
@@ -1234,10 +1631,10 @@ export const ToolsCoupleView: React.FC<ToolsCoupleViewProps> = ({
                   📍 {siteVenue}
                 </div>
                 <button
-                  onClick={() => alert(`Link público gerado: https://noivas.guiafotografo.com.br/casal/${encodeURIComponent(siteNames)}`)}
+                  onClick={saveWeddingWebsite}
                   className="px-5 py-2.5 bg-[#C88E9B] text-white rounded-xl font-bold text-xs shadow-sm cursor-pointer"
                 >
-                  Copiar Link para Enviar no WhatsApp
+                  Salvar e Copiar Link
                 </button>
               </div>
             </div>
@@ -1280,13 +1677,13 @@ export const ToolsCoupleView: React.FC<ToolsCoupleViewProps> = ({
 
                 <button
                   onClick={() => {
-                    setQuizStep(0);
-                    setQuizAnswers([]);
-                    setQuizResult(null);
+                    if (!userSession) setIsSavePromptOpen(true);
+                    else alert('Seu planejamento já é salvo automaticamente na nuvem no MySQL!');
                   }}
-                  className="px-5 py-2.5 bg-[#C7A86A] text-[#5A4035] rounded-xl font-bold text-xs cursor-pointer"
+                  className="px-5 py-2.5 bg-[#C7A86A] text-[#5A4035] hover:bg-white transition-all rounded-xl font-bold text-xs shadow-sm cursor-pointer flex items-center gap-2"
                 >
-                  Refazer Quiz
+                  <Sparkles className="w-3.5 h-3.5 text-[#5A4035]" />
+                  <span>Salvar Planejamento</span>
                 </button>
               </div>
             )}
@@ -1326,6 +1723,144 @@ export const ToolsCoupleView: React.FC<ToolsCoupleViewProps> = ({
                   <p className="text-xs text-stone-500">{b.description}</p>
                 </div>
               ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* SAVE PROMPT MODAL FOR UNAUTHENTICATED GUESTS */}
+      {isSavePromptOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4">
+          <div className="bg-white rounded-3xl p-8 max-w-md w-full shadow-2xl border border-[#C88E9B]/30 space-y-6 text-center">
+            <div className="w-16 h-16 rounded-full bg-[#FAF0F2] text-[#C88E9B] flex items-center justify-center mx-auto shadow-inner">
+              <Sparkles className="w-8 h-8 text-[#C88E9B]" />
+            </div>
+
+            <div className="space-y-2">
+              <h3 className="text-xl font-serif font-bold text-[#5A4035]">
+                Salvar seu Planejamento
+              </h3>
+              <p className="text-sm text-stone-600 font-medium leading-relaxed">
+                Crie sua conta gratuita para salvar seu planejamento e acessar de qualquer dispositivo.
+              </p>
+            </div>
+
+            <div className="space-y-3 pt-2">
+              <button
+                onClick={() => {
+                  setIsSavePromptOpen(false);
+                  if (onNavigateRegister) onNavigateRegister();
+                }}
+                className="w-full py-3.5 bg-gradient-to-r from-[#C88E9B] to-[#b07885] text-white font-bold text-sm rounded-xl shadow-md transition-all hover:opacity-95"
+              >
+                Criar conta grátis
+              </button>
+
+              <button
+                onClick={() => {
+                  setIsSavePromptOpen(false);
+                  if (onNavigateLogin) onNavigateLogin();
+                }}
+                className="w-full py-3 bg-stone-100 hover:bg-stone-200 text-[#5A4035] font-bold text-xs rounded-xl transition-all"
+              >
+                Já tenho uma conta
+              </button>
+
+              <button
+                onClick={() => setIsSavePromptOpen(false)}
+                className="text-xs text-stone-400 hover:text-stone-600 block mx-auto pt-1 font-medium"
+              >
+                Continuar explorando como visitante
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Wedding Profile Modal */}
+      {isEditModalOpen && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fadeIn">
+          <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-lg w-full shadow-2xl border border-[#C88E9B]/30 space-y-4">
+            <div className="flex items-center justify-between border-b border-[#5A4035]/10 pb-3">
+              <h3 className="text-xl font-serif font-bold text-[#5A4035]">Completar Perfil do Casal</h3>
+              <button
+                onClick={() => setIsEditModalOpen(false)}
+                className="text-stone-400 hover:text-stone-600 p-1 font-bold"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-3 text-xs">
+              <div>
+                <label className="block font-bold text-[#5A4035] mb-1">Data do Casamento:</label>
+                <input
+                  type="date"
+                  value={weddingDate}
+                  onChange={(e) => setWeddingDate(e.target.value)}
+                  className="w-full p-2.5 bg-[#FAF5F0] border border-[#5A4035]/20 rounded-xl"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-[#5A4035] mb-1">Local / Cidade da Cerimônia:</label>
+                <input
+                  type="text"
+                  value={siteVenue}
+                  onChange={(e) => setSiteVenue(e.target.value)}
+                  placeholder="Ex: Fazenda Santa Maria, Piracicaba - SP"
+                  className="w-full p-2.5 bg-[#FAF5F0] border border-[#5A4035]/20 rounded-xl"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-[#5A4035] mb-1">Estimativa de Convidados:</label>
+                <input
+                  type="number"
+                  value={simGuests}
+                  onChange={(e) => setSimGuests(Number(e.target.value))}
+                  className="w-full p-2.5 bg-[#FAF5F0] border border-[#5A4035]/20 rounded-xl font-bold"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-[#5A4035] mb-1">Teto Global de Orçamento (R$):</label>
+                <input
+                  type="number"
+                  step={1000}
+                  value={totalBudgetInput}
+                  onChange={(e) => setTotalBudgetInput(Number(e.target.value))}
+                  onBlur={saveBudget}
+                  className="w-full p-2.5 bg-[#FAF5F0] border border-[#5A4035]/20 rounded-xl font-bold text-emerald-800"
+                />
+              </div>
+            </div>
+
+            <div className="pt-3 flex justify-end gap-2">
+              <button
+                onClick={() => setIsEditModalOpen(false)}
+                className="px-4 py-2 text-stone-500 hover:bg-stone-100 rounded-xl text-xs font-semibold"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={() => {
+                  if (requireBrideLogin()) {
+                    requestJson('/api/bride/profile', {
+                      method: 'PUT',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ weddingDate, ceremonyLocation: siteVenue })
+                    })
+                      .then(() => setIsEditModalOpen(false))
+                      .catch((err) =>
+                        setDataError(err instanceof Error ? err.message : 'Erro ao salvar perfil.')
+                      );
+                  }
+                }}
+                className="px-6 py-2 bg-[#C88E9B] hover:bg-[#b07582] text-white font-bold text-xs rounded-xl shadow-xs transition-all"
+              >
+                Salvar Perfil
+              </button>
             </div>
           </div>
         </div>

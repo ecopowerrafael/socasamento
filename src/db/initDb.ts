@@ -418,7 +418,167 @@ export async function ensureTablesExist() {
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
       `);
 
-      console.log('✅ Tabela(s) do Portal Noivas verificadas / criadas no MySQL com sucesso!');
+      // 24. Subscription Plans Table
+      await conn.query(`
+        CREATE TABLE IF NOT EXISTS subscription_plans (
+          id INT AUTO_INCREMENT PRIMARY KEY,
+          name VARCHAR(100) NOT NULL,
+          internal_name VARCHAR(100),
+          slug VARCHAR(100) NOT NULL UNIQUE,
+          internal_code VARCHAR(100),
+          plan_type VARCHAR(20) DEFAULT 'PREMIUM',
+          is_default_free_plan TINYINT(1) DEFAULT 0,
+          short_description TEXT,
+          description TEXT,
+          currency VARCHAR(10) DEFAULT 'BRL',
+          is_free TINYINT(1) DEFAULT 0,
+          monthly_price DECIMAL(10,2) DEFAULT 0.00,
+          annual_price DECIMAL(10,2) DEFAULT 0.00,
+          promotional_monthly_price DECIMAL(10,2),
+          promotional_annual_price DECIMAL(10,2),
+          annual_monthly_equivalent DECIMAL(10,2),
+          annual_savings_amount DECIMAL(10,2),
+          annual_discount_percentage DECIMAL(5,2),
+          setup_fee DECIMAL(10,2) DEFAULT 0.00,
+          trial_enabled TINYINT(1) DEFAULT 0,
+          trial_days INT DEFAULT 0,
+          promotion_start_at DATETIME,
+          promotion_end_at DATETIME,
+          main_color VARCHAR(50) DEFAULT '#C88E9B',
+          text_color VARCHAR(50) DEFAULT '#5A4035',
+          button_color VARCHAR(50) DEFAULT '#C88E9B',
+          icon VARCHAR(100) DEFAULT 'Sparkles',
+          badge_text VARCHAR(100),
+          button_text VARCHAR(100) DEFAULT 'Assinar Agora',
+          button_url TEXT,
+          button_target VARCHAR(20) DEFAULT '_self',
+          text_above_price TEXT,
+          text_below_price TEXT,
+          is_recommended TINYINT(1) DEFAULT 0,
+          is_premium TINYINT(1) DEFAULT 0,
+          is_featured TINYINT(1) DEFAULT 0,
+          show_on_home TINYINT(1) DEFAULT 1,
+          show_on_pricing_page TINYINT(1) DEFAULT 1,
+          show_on_registration TINYINT(1) DEFAULT 1,
+          show_on_professional_dashboard TINYINT(1) DEFAULT 1,
+          allow_monthly_billing TINYINT(1) DEFAULT 1,
+          allow_annual_billing TINYINT(1) DEFAULT 1,
+          allow_cancel TINYINT(1) DEFAULT 1,
+          allow_upgrade TINYINT(1) DEFAULT 1,
+          allow_downgrade TINYINT(1) DEFAULT 1,
+          sort_order INT DEFAULT 0,
+          status VARCHAR(20) DEFAULT 'active',
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+          deleted_at DATETIME
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+      `);
+
+      try {
+        await conn.query(`ALTER TABLE subscription_plans ADD COLUMN plan_type VARCHAR(20) DEFAULT 'PREMIUM';`);
+      } catch (e) {}
+      try {
+        await conn.query(`ALTER TABLE subscription_plans ADD COLUMN is_default_free_plan TINYINT(1) DEFAULT 0;`);
+      } catch (e) {}
+
+      // 25. Photographer Subscriptions Table
+      await conn.query(`
+        CREATE TABLE IF NOT EXISTS photographer_subscriptions (
+          id INT AUTO_INCREMENT PRIMARY KEY,
+          photographer_id INT NOT NULL,
+          plan_id INT,
+          billing_cycle VARCHAR(20) DEFAULT 'MONTHLY',
+          status VARCHAR(30) DEFAULT 'ACTIVE',
+          source VARCHAR(30) DEFAULT 'SIMULATION',
+          starts_at DATETIME,
+          current_period_start DATETIME,
+          current_period_end DATETIME,
+          next_billing_at DATETIME,
+          cancel_at_period_end TINYINT(1) DEFAULT 0,
+          cancel_requested_at DATETIME,
+          cancelled_at DATETIME,
+          expired_at DATETIME,
+          suspended_at DATETIME,
+          reactivated_at DATETIME,
+          grace_period_ends_at DATETIME,
+          created_by_admin_id INT,
+          admin_notes TEXT,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+          FOREIGN KEY (photographer_id) REFERENCES photographers(id) ON DELETE CASCADE,
+          FOREIGN KEY (plan_id) REFERENCES subscription_plans(id) ON DELETE SET NULL
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+      `);
+
+      // 26. Subscription Payments Table
+      await conn.query(`
+        CREATE TABLE IF NOT EXISTS subscription_payments (
+          id INT AUTO_INCREMENT PRIMARY KEY,
+          subscription_id INT,
+          photographer_id INT NOT NULL,
+          plan_id INT,
+          billing_cycle VARCHAR(20),
+          provider VARCHAR(30) DEFAULT 'SIMULATION',
+          external_payment_id VARCHAR(255),
+          payment_reference VARCHAR(255),
+          amount DECIMAL(10,2) DEFAULT 0.00,
+          currency VARCHAR(10) DEFAULT 'BRL',
+          status VARCHAR(30) DEFAULT 'PENDING',
+          payment_method VARCHAR(50) DEFAULT 'SIMULATION',
+          installments INT DEFAULT 1,
+          paid_at DATETIME,
+          failed_at DATETIME,
+          refunded_at DATETIME,
+          cancelled_at DATETIME,
+          failure_reason TEXT,
+          metadata_json JSON,
+          created_by_admin_id INT,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+          FOREIGN KEY (photographer_id) REFERENCES photographers(id) ON DELETE CASCADE,
+          FOREIGN KEY (plan_id) REFERENCES subscription_plans(id) ON DELETE SET NULL,
+          FOREIGN KEY (subscription_id) REFERENCES photographer_subscriptions(id) ON DELETE SET NULL
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+      `);
+
+      // 27. Subscription History Table
+      await conn.query(`
+        CREATE TABLE IF NOT EXISTS subscription_history (
+          id INT AUTO_INCREMENT PRIMARY KEY,
+          subscription_id INT,
+          photographer_id INT NOT NULL,
+          previous_plan_id INT,
+          new_plan_id INT,
+          previous_status VARCHAR(30),
+          new_status VARCHAR(30),
+          previous_billing_cycle VARCHAR(20),
+          new_billing_cycle VARCHAR(20),
+          event_type VARCHAR(50) NOT NULL,
+          performed_by_type VARCHAR(30) DEFAULT 'SYSTEM',
+          performed_user_id INT,
+          reason TEXT,
+          details_json JSON,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (photographer_id) REFERENCES photographers(id) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+      `);
+
+      // 28. Photographer Plan Periods Table
+      await conn.query(`
+        CREATE TABLE IF NOT EXISTS photographer_plan_periods (
+          id INT AUTO_INCREMENT PRIMARY KEY,
+          photographer_id INT NOT NULL,
+          subscription_id INT,
+          plan_id INT NOT NULL,
+          started_at DATETIME NOT NULL,
+          ended_at DATETIME,
+          end_reason VARCHAR(50),
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (photographer_id) REFERENCES photographers(id) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+      `);
+
+      console.log('✅ Tabela(s) de Assinaturas e Portal Noivas verificadas / criadas no MySQL com sucesso!');
     } finally {
       conn.release();
     }

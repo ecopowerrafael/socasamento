@@ -18,6 +18,10 @@ import {
   subscriptionPlans,
   subscriptionPlanItems,
   subscriptionPlanFeatures,
+  photographerSubscriptions,
+  subscriptionPayments,
+  subscriptionHistory,
+  photographerPlanPeriods,
   subscriptions,
   categories,
   photographerCategories,
@@ -25,15 +29,9 @@ import {
   userChecklists,
   clickLogs,
 } from './src/db/schema.ts';
+import { SubscriptionService } from './src/services/subscriptionService.ts';
 import { eq, and, sql, desc, asc, inArray, or, isNull, like } from 'drizzle-orm';
 import { seedDatabase } from './src/db/seed.ts';
-import {
-  BRAZIL_STATES,
-  MOCK_PHOTOGRAPHERS,
-  RECENT_WEDDINGS,
-  BLOG_ARTICLES,
-  INITIAL_CHECKLIST,
-} from './src/data/mockData.ts';
 import {
   requireAuth,
   optionalAuth,
@@ -43,254 +41,14 @@ import {
   AuthRequest,
 } from './src/middleware/auth.ts';
 import bcrypt from 'bcryptjs';
-
-// In-Memory fallbacks for when external MySQL DB is disconnected
-const inMemoryLeads: any[] = [
-  {
-    id: 1,
-    userUid: 'client-demo-uid-camila',
-    coupleName: 'Camila & Fernando',
-    email: 'camila.fernando@email.com',
-    phone: '(19) 99876-5432',
-    whatsapp: '5519998765432',
-    weddingDate: '2026-11-15',
-    city: 'Piracicaba',
-    state: 'SP',
-    venueType: 'Campo / Fazenda',
-    estimatedGuests: 150,
-    budgetLimit: 7000,
-    servicesNeeded: ['Foto', 'Vídeo', 'Álbum'],
-    stylePreference: 'Fine Art',
-    photographerIds: ['p1', 'fotografo-perez'],
-    message: 'Olá! Gostaria de um orçamento detalhado para nosso casamento em Piracicaba.',
-    status: 'Novo',
-    createdAt: new Date().toISOString(),
-  },
-];
-
-const inMemoryChecklists: any[] = INITIAL_CHECKLIST.map((item, idx) => ({
-  id: idx + 1,
-  userUid: 'client-demo-uid-camila',
-  task: item.task,
-  timeframe: item.timeframe,
-  completed: item.completed,
-  category: item.category,
-  createdAt: new Date().toISOString(),
-}));
-
-const inMemoryFavorites: any[] = [];
-
-const inMemoryCategories: any[] = [
-  {
-    id: 1,
-    parentId: null,
-    name: 'Fotógrafos',
-    slug: 'fotografos',
-    shortDescription: 'Profissionais de fotografia de casamento',
-    description: 'Encontre fotógrafos renomados para seu casamento.',
-    icon: 'Camera',
-    image: null,
-    iconColor: '#C88E9B',
-    seoTitle: 'Fotógrafos de Casamento | Guia Fotógrafo Casamento',
-    seoDescription: 'Encontre e compare os melhores fotógrafos de casamento.',
-    focusKeyword: 'fotografo de casamento',
-    showOnHome: true,
-    showOnSearch: true,
-    sortOrder: 1,
-    status: 'active',
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-    deletedAt: null,
-  },
-  {
-    id: 2,
-    parentId: null,
-    name: 'Foto e Filme',
-    slug: 'foto-e-filme',
-    shortDescription: 'Equipes completas de foto e vídeo para casamento',
-    description: 'Equipes integradas de cobertura fotográfica e cinematográfica.',
-    icon: 'Video',
-    image: null,
-    iconColor: '#C7A86A',
-    seoTitle: 'Foto e Filme de Casamento | Guia Fotógrafo Casamento',
-    seoDescription: 'Cobertura completa de fotografia e vídeo para casamentos.',
-    focusKeyword: 'foto e filme casamento',
-    showOnHome: true,
-    showOnSearch: true,
-    sortOrder: 2,
-    status: 'active',
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-    deletedAt: null,
-  },
-  {
-    id: 3,
-    parentId: null,
-    name: 'Drone / Aéreo',
-    slug: 'drone',
-    shortDescription: 'Imagens e vídeos aéreos do seu casamento',
-    description: 'Captação aérea em alta definição para cerimônias e recepções.',
-    icon: 'Aperture',
-    image: null,
-    iconColor: '#5A4035',
-    seoTitle: 'Drone de Casamento | Guia Fotógrafo Casamento',
-    seoDescription: 'Captação aérea com drone para casamentos.',
-    focusKeyword: 'drone casamento',
-    showOnHome: true,
-    showOnSearch: true,
-    sortOrder: 3,
-    status: 'active',
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-    deletedAt: null,
-  },
-  {
-    id: 4,
-    parentId: null,
-    name: 'Pré Wedding',
-    slug: 'pre-wedding',
-    shortDescription: 'Ensaios fotográficos de noivado e pré-casamento',
-    description: 'Ensaios externos para registrar a fase de noivado dos noivos.',
-    icon: 'Heart',
-    image: null,
-    iconColor: '#C88E9B',
-    seoTitle: 'Ensaio Pré Wedding | Guia Fotógrafo Casamento',
-    seoDescription: 'Encontre os melhores fotógrafos para seu ensaio pré-wedding.',
-    focusKeyword: 'ensaio pre wedding',
-    showOnHome: true,
-    showOnSearch: true,
-    sortOrder: 4,
-    status: 'active',
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-    deletedAt: null,
-  },
-  {
-    id: 5,
-    parentId: null,
-    name: 'Mini Wedding',
-    slug: 'mini-wedding',
-    shortDescription: 'Fotografia especializada em recepções intimistas',
-    description: 'Registro de casamentos menores com foco em detalhes e afeto.',
-    icon: 'Sparkles',
-    image: null,
-    iconColor: '#C7A86A',
-    seoTitle: 'Fotografia de Mini Wedding | Guia Fotógrafo Casamento',
-    seoDescription: 'Especialistas em fotografia de mini wedding e eventos intimistas.',
-    focusKeyword: 'mini wedding fotografo',
-    showOnHome: true,
-    showOnSearch: true,
-    sortOrder: 5,
-    status: 'active',
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-    deletedAt: null,
-  },
-  {
-    id: 6,
-    parentId: null,
-    name: 'Casamento Civil',
-    slug: 'casamento-civil',
-    shortDescription: 'Cobertura fotográfica para cartório e comemoração',
-    description: 'Ensaios e registros fotográficos no cartório e pequenos almoços.',
-    icon: 'FileText',
-    image: null,
-    iconColor: '#5A4035',
-    seoTitle: 'Fotografia Casamento Civil | Guia Fotógrafo Casamento',
-    seoDescription: 'Fotógrafos para registro de casamento civil e cartório.',
-    focusKeyword: 'fotografo casamento civil',
-    showOnHome: true,
-    showOnSearch: true,
-    sortOrder: 6,
-    status: 'active',
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-    deletedAt: null,
-  },
-  {
-    id: 7,
-    parentId: null,
-    name: 'Destination Wedding',
-    slug: 'destination-wedding',
-    shortDescription: 'Fotografia para casamentos em praias, montanhas e exterior',
-    description: 'Fotógrafos dispostos a viajar com o casal para registrar casamentos em qualquer destino.',
-    icon: 'Globe',
-    image: null,
-    iconColor: '#C88E9B',
-    seoTitle: 'Destination Wedding | Guia Fotógrafo Casamento',
-    seoDescription: 'Fotógrafos de destination wedding no Brasil e exterior.',
-    focusKeyword: 'destination wedding fotografo',
-    showOnHome: true,
-    showOnSearch: true,
-    sortOrder: 7,
-    status: 'active',
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-    deletedAt: null,
-  },
-];
-
-const inMemoryStates: any[] = BRAZIL_STATES.map((st, idx) => ({
-  id: idx + 1,
-  uf: st.uf,
-  name: st.name,
-  slug: `fotografo-casamento-${st.uf.toLowerCase()}`,
-  ibgeCode: String(35 + idx),
-  region: ['SP', 'RJ', 'MG', 'ES'].includes(st.uf)
-    ? 'Sudeste'
-    : ['PR', 'SC', 'RS'].includes(st.uf)
-    ? 'Sul'
-    : ['BA', 'PE', 'CE'].includes(st.uf)
-    ? 'Nordeste'
-    : ['DF', 'GO'].includes(st.uf)
-    ? 'Centro-Oeste'
-    : 'Norte',
-  image: null,
-  introductoryText: `Encontre fotógrafos de casamento em ${st.name} (${st.uf}).`,
-  seoTitle: `Fotógrafos de Casamento em ${st.name} - ${st.uf}`,
-  seoDescription: `Lista completa dos melhores fotógrafos de casamento do estado de ${st.name}.`,
-  showInNavigation: true,
-  sortOrder: idx + 1,
-  status: 'active',
-  photographersCount: st.photographersCount,
-  createdAt: new Date().toISOString(),
-  updatedAt: new Date().toISOString(),
-  deletedAt: null,
-}));
-
-const inMemoryCities: any[] = [];
-let cityIdCounter = 1;
-
-BRAZIL_STATES.forEach((st, stIdx) => {
-  const stateId = stIdx + 1;
-  st.topCities.forEach((cName, cIdx) => {
-    const citySlug = `fotografo-casamento-${cName.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-')}`;
-    inMemoryCities.push({
-      id: cityIdCounter++,
-      stateId,
-      stateUf: st.uf,
-      name: cName,
-      slug: citySlug,
-      ibgeCode: String(350000 + cityIdCounter),
-      latitude: null,
-      longitude: null,
-      image: null,
-      introductoryText: `Encontre os melhores fotógrafos de casamento em ${cName} - ${st.uf}. Compare preços, portfólios e solicite orçamentos sem compromisso.`,
-      heroText: `Fotógrafos em ${cName}`,
-      seoTitle: `Fotógrafos de Casamento em ${cName} - ${st.uf} | Orçamentos Grátis`,
-      seoDescription: `Procurando fotógrafo de casamento em ${cName}, ${st.uf}? Veja avaliações, portfólios e obtenha preços diretamente no portal.`,
-      focusKeyword: `fotografo casamento ${cName.toLowerCase()}`,
-      showInNavigation: true,
-      featured: cIdx < 3,
-      sortOrder: cIdx + 1,
-      status: 'active',
-      photographersCount: 10 + cIdx * 5,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      deletedAt: null,
-    });
-  });
-});
+import { auditMysqlSchema, ensureCompleteMysqlSchema } from './src/db/schemaBootstrap.ts';
+import authRoutes from './src/routes/authRoutes.ts';
+import brideRoutes from './src/routes/brideRoutes.ts';
+import publicRoutes from './src/routes/publicRoutes.ts';
+import mercadoPagoRoutes from './src/routes/mercadoPagoRoutes.ts';
+import notificationRoutes from './src/routes/notificationRoutes.ts';
+import contentRoutes from './src/routes/contentRoutes.ts';
+import { NotificationEventService, eventReminderService, notificationDeliveryWorker } from './src/services/notificationSystem.ts';
 
 async function startServer() {
   const app = express();
@@ -299,30 +57,50 @@ async function startServer() {
   app.use(express.json());
   app.use(cookieParser());
 
-  // Test MySQL connection at startup
-  console.log('🔄 Testando conexão com o banco de dados MySQL...');
+  // MySQL is mandatory. No functional data is served from memory or browser storage.
+  console.log('Verificando conexão e schema do MySQL...');
   const connStatus = await testConnection();
-  if (connStatus.success) {
-    try {
-      const existingPhotographers = await db.select().from(photographers).limit(1);
-      if (existingPhotographers.length === 0) {
-        console.log('Banco de dados MySQL vazio. Executando seed inicial...');
-        await seedDatabase();
-      }
-    } catch (err) {
-      console.error('Erro ao verificar/semear banco de dados:', err);
-    }
-  } else {
-    console.warn('⚠️ A conexão inicial com o MySQL não respondeu.');
-    console.warn('Servidor rodando em modo resiliente: dados locais serão exibidos até a configuração das variáveis DB_HOST / DB_PASSWORD no .env.');
+  if (!connStatus.success) {
+    throw new Error('O MySQL é obrigatório. Corrija DB_HOST, DB_DATABASE, DB_USERNAME e DB_PASSWORD antes de iniciar.');
   }
+  const schemaAudit = await ensureCompleteMysqlSchema();
+  console.log(`Schema MySQL pronto: ${schemaAudit.existingTables}/${schemaAudit.expectedTables} tabelas.`);
+  await seedDatabase();
 
   // --- API ROUTES ---
+  app.use('/api/auth', authRoutes);
+  app.use('/api/bride', brideRoutes);
+  app.use('/api', mercadoPagoRoutes);
+  app.use('/api', publicRoutes);
+  app.use('/api', notificationRoutes);
+  app.use('/api', contentRoutes);
+
+  // O banco é a fonte oficial da fila; este worker apenas busca e processa
+  // entregas persistidas, permitindo retomada segura após reinicializações.
+  const notificationWorkerTimer = setInterval(() => {
+    notificationDeliveryWorker.runOnce().catch((error) => {
+      console.error('Falha no worker de notificações:', error);
+    });
+  }, 15_000);
+  notificationWorkerTimer.unref();
+  notificationDeliveryWorker.runOnce().catch(() => {});
+  const reminderWorkerTimer = setInterval(() => {
+    eventReminderService.runOnce().catch((error) => {
+      console.error('Falha no worker de lembretes:', error);
+    });
+  }, 60_000);
+  reminderWorkerTimer.unref();
+  eventReminderService.runOnce().catch(() => {});
 
   // Database Connection Test Route
   app.get('/api/db/test', async (req, res) => {
-    const result = await testConnection();
-    res.json(result);
+    const connection = await testConnection();
+    const schema = connection.success ? await auditMysqlSchema() : null;
+    res.status(connection.success && schema?.ready ? 200 : 503).json({
+      success: connection.success && schema?.ready,
+      connection,
+      schema,
+    });
   });
 
   // Health check
@@ -334,484 +112,6 @@ async function startServer() {
       connectionStatus: currentConn.success ? 'connected' : 'disconnected',
       time: new Date().toISOString(),
     });
-  });
-
-  // Login Route for Super Admin, Admin, Photographer & Client
-  app.post('/api/auth/login', async (req, res) => {
-    try {
-      const { username, email, password } = req.body;
-      const loginIdentifier = (username || email || '').trim();
-
-      if (!loginIdentifier || !password) {
-        return res.status(400).json({
-          success: false,
-          error: 'Por favor, informe e-mail/usuário e senha.',
-        });
-      }
-
-      const lowerIdentifier = loginIdentifier.toLowerCase();
-      let matchedUser: any = null;
-      let photoProfile: any = null;
-
-      // 1. Check Super Admin & Admin predefined credentials
-      if (
-        lowerIdentifier === 'rafael' ||
-        lowerIdentifier === 'rafael@guiafotografocasamento.com.br' ||
-        lowerIdentifier === 'superadmin'
-      ) {
-        if (password === '2705#Data' || password === '123456' || password === 'fotografia2026') {
-          matchedUser = {
-            id: 'u_superadmin',
-            uid: 'super-admin-uid-rafael',
-            email: 'rafael@guiafotografocasamento.com.br',
-            name: 'Rafael (Super Admin)',
-            role: 'super_admin',
-            lastLoginAt: new Date().toISOString(),
-          };
-        }
-      } else if (
-        lowerIdentifier === 'admin' ||
-        lowerIdentifier === 'guiafotografo' ||
-        lowerIdentifier === 'admin@guiafotografocasamento.com.br'
-      ) {
-        if (password === 'fotografia2026' || password === '123456' || password === 'admin123') {
-          matchedUser = {
-            id: 'u_admin',
-            uid: 'admin-uid-guiafotografo',
-            email: 'admin@guiafotografocasamento.com.br',
-            name: 'Guia Fotógrafo Admin',
-            role: 'admin',
-            lastLoginAt: new Date().toISOString(),
-          };
-        }
-      } else if (
-        lowerIdentifier === 'eduardo@exemplo.com.br' ||
-        lowerIdentifier === 'contato@perezfotografia.com.br' ||
-        lowerIdentifier === 'eduardo perez' ||
-        lowerIdentifier === 'perez'
-      ) {
-        if (password === 'perez2026' || password === '123456' || password === 'fotografia2026') {
-          matchedUser = {
-            id: 'u_perez',
-            uid: 'photographer-demo-uid-perez',
-            email: 'eduardo@exemplo.com.br',
-            name: 'Eduardo Perez',
-            role: 'photographer',
-            photographerId: 'p1',
-            studioName: 'Eduardo Perez Fotografia',
-            city: 'Piracicaba',
-            state: 'SP',
-            lastLoginAt: new Date().toISOString(),
-          };
-          photoProfile = MOCK_PHOTOGRAPHERS[0];
-        }
-      } else if (
-        lowerIdentifier === 'noiva@exemplo.com.br' ||
-        lowerIdentifier === 'camila' ||
-        lowerIdentifier === 'camila@exemplo.com.br'
-      ) {
-        if (password === '123456' || password === 'noiva2026') {
-          matchedUser = {
-            id: 'u_client_camila',
-            uid: 'client-demo-uid-camila',
-            email: 'noiva@exemplo.com.br',
-            name: 'Camila & Fernando (Noivos)',
-            role: 'client',
-            lastLoginAt: new Date().toISOString(),
-          };
-        }
-      }
-
-      // 2. Try MySQL Database lookup if not matched by predefined accounts
-      if (!matchedUser) {
-        try {
-          const dbUsers = await db
-            .select()
-            .from(users)
-            .where(
-              or(
-                eq(users.email, loginIdentifier),
-                eq(users.name, loginIdentifier),
-                eq(users.uid, loginIdentifier)
-              )
-            );
-
-          if (dbUsers.length > 0) {
-            const u = dbUsers[0];
-            let isValidPassword = false;
-            if (u.passwordHash) {
-              if (u.passwordHash.startsWith('$2')) {
-                isValidPassword = await bcrypt.compare(password, u.passwordHash);
-              } else {
-                isValidPassword = u.passwordHash === password || password === '123456';
-              }
-            }
-
-            if (isValidPassword) {
-              matchedUser = {
-                id: u.id,
-                uid: u.uid,
-                email: u.email,
-                name: u.name,
-                role: u.role,
-                lastLoginAt: new Date().toISOString(),
-              };
-
-              const pList = await db
-                .select()
-                .from(photographers)
-                .where(eq(photographers.userUid, u.uid));
-
-              if (pList.length > 0) {
-                photoProfile = pList[0];
-                matchedUser.photographerId = String(pList[0].id);
-                matchedUser.studioName = pList[0].studioName;
-              }
-
-              // Update last login timestamp in DB
-              try {
-                await db
-                  .update(users)
-                  .set({ updatedAt: new Date() })
-                  .where(eq(users.id, u.id));
-              } catch (e) {
-                // non-critical
-              }
-            }
-          }
-        } catch (dbErr) {
-          console.warn('DB login query fallback active');
-        }
-      }
-
-      if (!matchedUser) {
-        return res.status(401).json({
-          success: false,
-          error: 'Credenciais inválidas. Verifique usuário/e-mail e senha.',
-        });
-      }
-
-      // Generate JWT
-      const token = signToken({
-        uid: matchedUser.uid,
-        id: matchedUser.id,
-        email: matchedUser.email,
-        name: matchedUser.name,
-        role: matchedUser.role,
-        photographerId: matchedUser.photographerId || (photoProfile ? String(photoProfile.id) : undefined),
-        studioName: matchedUser.studioName,
-        lastLoginAt: matchedUser.lastLoginAt,
-      });
-
-      // Set HttpOnly, Secure, SameSite Cookie
-      res.cookie('auth_token', token, {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
-        sameSite: 'lax',
-        maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
-      });
-
-      return res.json({
-        success: true,
-        token,
-        user: matchedUser,
-        photographerProfile: photoProfile,
-        message: 'Login realizado com sucesso!',
-      });
-    } catch (err: any) {
-      console.error('Error on login:', err);
-      res.status(500).json({ success: false, error: err?.message || 'Erro ao realizar login' });
-    }
-  });
-
-  // Register Photographer Route
-  app.post('/api/auth/register-photographer', async (req, res) => {
-    try {
-      const { name, email, password, studioName, city, state, phone } = req.body;
-
-      if (!name || !email || !password) {
-        return res.status(400).json({
-          success: false,
-          error: 'Nome, e-mail e senha são obrigatórios.',
-        });
-      }
-
-      const uid = 'p_' + Date.now();
-      const passwordHash = await bcrypt.hash(password, 10);
-      const userRole = 'photographer';
-      const cleanStudioName = studioName || name;
-      const slug = cleanStudioName
-        .toLowerCase()
-        .normalize('NFD')
-        .replace(/[\u0300-\u036f]/g, '')
-        .replace(/[^a-z0-9]+/g, '-');
-
-      let newUser: any = {
-        id: Date.now(),
-        uid,
-        email,
-        name,
-        role: userRole,
-        lastLoginAt: new Date().toISOString(),
-      };
-
-      let newPhotographerProfile: any = {
-        id: 'p_' + Date.now(),
-        slug,
-        name,
-        studioName: cleanStudioName,
-        avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=400&q=80',
-        coverImage: 'https://images.unsplash.com/photo-1519741497674-611481863552?auto=format&fit=crop&w=1600&q=80',
-        city: city || 'Piracicaba',
-        state: state || 'SP',
-        rating: 5.0,
-        reviewCount: 1,
-        priceStartingFrom: 2500,
-        priceCategory: 'R$ 2.000 a R$ 5.000',
-        styles: ['Fine Art', 'Fotojornalismo'],
-        deliverables: ['Foto', 'Álbum'],
-        categories: ['Fotógrafos'],
-        badges: ['Verificado'],
-        yearsExperience: 3,
-        weddingsCompleted: 15,
-        awardsCount: 0,
-        description: 'Estúdio de fotografia de casamento especializado em capturar momentos inesquecíveis com emoção e luz natural.',
-        bioFull: `Olá! Sou ${name}, fotógrafo fundador do estúdio ${cleanStudioName}.`,
-        phone: phone || '(19) 99876-5432',
-        whatsapp: phone ? phone.replace(/\D/g, '') : '19998765432',
-        instagram: `@${slug.replace(/-/g, '')}`,
-        website: `https://${slug}.com.br`,
-        email,
-        gallery: [],
-        videos: [],
-        packages: [],
-        reviews: [],
-        faqs: [],
-        plan: 'Destaque',
-      };
-
-      try {
-        const [userInsert] = await db.insert(users).values({
-          uid,
-          email,
-          name,
-          role: userRole,
-          passwordHash,
-          status: 'active',
-        });
-        const userId = (userInsert as any).insertId;
-        newUser.id = userId;
-
-        const [photoInsert] = await db.insert(photographers).values({
-          userUid: uid,
-          slug,
-          name,
-          studioName: cleanStudioName,
-          avatar: newPhotographerProfile.avatar,
-          coverImage: newPhotographerProfile.coverImage,
-          city: newPhotographerProfile.city,
-          state: newPhotographerProfile.state,
-          priceStartingFrom: 2500,
-          priceCategory: 'R$ 2.000 a R$ 5.000',
-          styles: ['Fine Art', 'Fotojornalismo'],
-          deliverables: ['Foto', 'Álbum'],
-          categories: ['Fotógrafos'],
-          description: newPhotographerProfile.description,
-          bioFull: newPhotographerProfile.bioFull,
-          phone: newPhotographerProfile.phone,
-          whatsapp: newPhotographerProfile.whatsapp,
-          email,
-          status: 'approved',
-        });
-        const photoId = (photoInsert as any).insertId;
-        newPhotographerProfile.id = photoId;
-      } catch (dbErr) {
-        console.warn('DB register photographer fallback to memory active');
-      }
-
-      newUser.photographerId = String(newPhotographerProfile.id);
-
-      const token = signToken({
-        uid: newUser.uid,
-        id: newUser.id,
-        email: newUser.email,
-        name: newUser.name,
-        role: newUser.role,
-        photographerId: String(newPhotographerProfile.id),
-        studioName: cleanStudioName,
-        lastLoginAt: newUser.lastLoginAt,
-      });
-
-      res.cookie('auth_token', token, {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
-        sameSite: 'lax',
-        maxAge: 7 * 24 * 60 * 60 * 1000,
-      });
-
-      res.status(201).json({
-        success: true,
-        token,
-        user: newUser,
-        photographerProfile: newPhotographerProfile,
-        message: 'Cadastro de fotógrafo realizado com sucesso!',
-      });
-    } catch (err: any) {
-      console.error('Error registering photographer:', err);
-      res.status(500).json({ success: false, error: err?.message || 'Erro ao registrar fotógrafo' });
-    }
-  });
-
-  // Forgot Password Route
-  app.post('/api/auth/forgot-password', async (req, res) => {
-    try {
-      const { email } = req.body;
-      if (!email) {
-        return res.status(400).json({ success: false, error: 'Informe o e-mail cadastrado.' });
-      }
-
-      const resetToken = 'reset_token_' + Math.random().toString(36).substring(2, 10) + '_' + Date.now();
-
-      return res.json({
-        success: true,
-        resetToken,
-        message: `As instruções de redefinição de senha foram enviadas para o e-mail: ${email}. Use o código para cadastrar uma nova senha.`,
-      });
-    } catch (err: any) {
-      res.status(500).json({ success: false, error: 'Erro ao processar solicitação de redefinição.' });
-    }
-  });
-
-  // Reset Password Route
-  app.post('/api/auth/reset-password', async (req, res) => {
-    try {
-      const { token, newPassword } = req.body;
-
-      if (!token || !newPassword || newPassword.length < 6) {
-        return res.status(400).json({
-          success: false,
-          error: 'Token inválido ou senha com menos de 6 caracteres.',
-        });
-      }
-
-      return res.json({
-        success: true,
-        message: 'Sua senha foi redefinida com sucesso! Você já pode efetuar login com sua nova senha.',
-      });
-    } catch (err: any) {
-      res.status(500).json({ success: false, error: 'Erro ao redefinir senha.' });
-    }
-  });
-
-  // Logout Route (Clears HttpOnly Cookie and Invalidate Session)
-  app.post('/api/auth/logout', (req, res) => {
-    res.clearCookie('auth_token', {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-    });
-    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
-    res.setHeader('Pragma', 'no-cache');
-    res.setHeader('Expires', '0');
-
-    return res.json({
-      success: true,
-      message: 'Sessão encerrada e token removido com sucesso.',
-    });
-  });
-
-  // Admin Seed trigger (Requires Super Admin or Admin)
-  app.post('/api/admin/seed', requireAuth, requireAdmin, async (req, res) => {
-    try {
-      await seedDatabase();
-      res.json({ success: true, message: 'Banco de dados MySQL semeado com sucesso!' });
-    } catch (err: any) {
-      res.status(500).json({ success: false, error: err?.message || 'Erro ao semear banco' });
-    }
-  });
-
-  // Auth User Sync (Synchronize Auth to MySQL)
-  app.post('/api/auth/sync', requireAuth, async (req: AuthRequest, res) => {
-    try {
-      const userUid = req.user!.uid;
-      const email = req.user!.email || `${userUid}@user.com`;
-      const name = req.body.name || req.user!.name || email.split('@')[0];
-      const role = req.body.role || 'client';
-
-      let currentUser: any = { uid: userUid, email, name, role };
-      let photoProfile: any = null;
-
-      try {
-        const existingUser = await db.select().from(users).where(eq(users.uid, userUid));
-        if (existingUser.length === 0) {
-          const [insertRes] = await db.insert(users).values({
-            uid: userUid,
-            email,
-            name,
-            role,
-            status: 'active',
-          });
-          const newId = (insertRes as any).insertId;
-          const fetched = await db.select().from(users).where(eq(users.id, newId));
-          currentUser = fetched[0];
-        } else {
-          currentUser = existingUser[0];
-        }
-
-        const photos = await db
-          .select()
-          .from(photographers)
-          .where(eq(photographers.userUid, userUid));
-        photoProfile = photos[0] || null;
-      } catch (dbErr) {
-        console.warn('Sync DB fallback');
-      }
-
-      res.json({
-        success: true,
-        user: currentUser,
-        photographerProfile: photoProfile,
-      });
-    } catch (err: any) {
-      console.error('Error syncing user:', err);
-      res.status(500).json({ success: false, error: 'Erro ao sincronizar usuário' });
-    }
-  });
-
-  // Get current user session (/api/auth/me)
-  app.get('/api/auth/me', optionalAuth, async (req: AuthRequest, res) => {
-    try {
-      if (!req.user) {
-        return res.json({ success: true, user: null, photographerProfile: null });
-      }
-
-      const userUid = req.user.uid;
-      let currentUser: any = req.user;
-      let photoProfile: any = null;
-
-      try {
-        const userList = await db.select().from(users).where(eq(users.uid, userUid));
-        if (userList.length > 0) currentUser = userList[0];
-
-        const photos = await db
-          .select()
-          .from(photographers)
-          .where(eq(photographers.userUid, userUid));
-        if (photos.length > 0) photoProfile = photos[0];
-      } catch (dbErr) {
-        if (userUid === 'photographer-demo-uid-perez') {
-          photoProfile = MOCK_PHOTOGRAPHERS[0];
-        }
-      }
-
-      res.json({
-        success: true,
-        user: currentUser,
-        photographerProfile: photoProfile,
-      });
-    } catch (err: any) {
-      res.status(500).json({ success: false, error: err?.message });
-    }
   });
 
   // --- PHOTOGRAPHERS API ---
@@ -831,16 +131,7 @@ async function startServer() {
         sortBy,
       } = req.query;
 
-      let allPhotographers: any[] = [];
-      let isDbWorking = false;
-
-      try {
-        allPhotographers = await db.select().from(photographers);
-        isDbWorking = true;
-      } catch (dbErr) {
-        console.warn('MySQL DB not available, using fallback MOCK_PHOTOGRAPHERS dataset');
-        allPhotographers = JSON.parse(JSON.stringify(MOCK_PHOTOGRAPHERS));
-      }
+      const allPhotographers: any[] = await db.select().from(photographers);
 
       // Filter in memory for maximum search flexibility
       let result = allPhotographers.filter((p) => {
@@ -895,15 +186,11 @@ async function startServer() {
         });
       }
 
-      let formatted = result;
+      const mediaList = await db.select().from(photographerMedia);
+      const pkgList = await db.select().from(photographerPackages);
+      const revList = await db.select().from(reviews);
 
-      if (isDbWorking) {
-        try {
-          const mediaList = await db.select().from(photographerMedia);
-          const pkgList = await db.select().from(photographerPackages);
-          const revList = await db.select().from(reviews);
-
-          formatted = result.map((p) => {
+      const formatted = result.map((p) => {
             const pMedia = mediaList.filter((m) => m.photographerId === p.id);
             const pPkgs = pkgList.filter((k) => k.photographerId === p.id);
             const pRevs = revList.filter((r) => r.photographerId === p.id);
@@ -949,10 +236,6 @@ async function startServer() {
               })),
             };
           });
-        } catch (mErr) {
-          console.warn('Failed to fetch media relations from DB, using item defaults');
-        }
-      }
 
       res.json({ success: true, photographers: formatted, total: formatted.length });
     } catch (err: any) {
@@ -965,34 +248,16 @@ async function startServer() {
   app.get('/api/photographers/:slug', async (req, res) => {
     try {
       const { slug } = req.params;
-
-      try {
-        const photoList = await db
-          .select()
-          .from(photographers)
-          .where(eq(photographers.slug, slug));
-
-        if (photoList.length > 0) {
-          const p = photoList[0];
-          db.update(photographers)
-            .set({ viewsCount: (p.viewsCount || 0) + 1 })
-            .where(eq(photographers.id, p.id))
-            .catch(() => {});
-
-          const pMedia = await db
-            .select()
-            .from(photographerMedia)
-            .where(eq(photographerMedia.photographerId, p.id));
-          const pPkgs = await db
-            .select()
-            .from(photographerPackages)
-            .where(eq(photographerPackages.photographerId, p.id));
-          const pRevs = await db
-            .select()
-            .from(reviews)
-            .where(eq(reviews.photographerId, p.id));
-
-          const formatted = {
+      const photoList = await db.select().from(photographers).where(eq(photographers.slug, slug));
+      if (!photoList.length) return res.status(404).json({ success: false, error: 'Fotógrafo não encontrado' });
+      const p = photoList[0];
+      await db.update(photographers)
+        .set({ viewsCount: (p.viewsCount || 0) + 1 })
+        .where(eq(photographers.id, p.id));
+      const pMedia = await db.select().from(photographerMedia).where(eq(photographerMedia.photographerId, p.id));
+      const pPkgs = await db.select().from(photographerPackages).where(eq(photographerPackages.photographerId, p.id));
+      const pRevs = await db.select().from(reviews).where(eq(reviews.photographerId, p.id));
+      const formatted = {
             ...p,
             gallery: pMedia
               .filter((m) => m.type === 'photo')
@@ -1031,24 +296,8 @@ async function startServer() {
               verifiedBooking: r.verifiedBooking || true,
               photographerReply: r.photographerReply || undefined,
             })),
-          };
-
-          return res.json({ success: true, photographer: formatted });
-        }
-      } catch (dbErr) {
-        console.warn('DB single photographer query fallback to mock dataset');
-      }
-
-      // Fallback search in MOCK_PHOTOGRAPHERS
-      const mockPhoto = MOCK_PHOTOGRAPHERS.find(
-        (p) => p.slug === slug || p.id === slug || p.studioName.toLowerCase().includes(slug)
-      );
-
-      if (mockPhoto) {
-        return res.json({ success: true, photographer: mockPhoto });
-      }
-
-      return res.status(404).json({ success: false, error: 'Fotógrafo não encontrado' });
+      };
+      return res.json({ success: true, photographer: formatted });
     } catch (err: any) {
       res.status(500).json({ success: false, error: err?.message });
     }
@@ -1073,11 +322,10 @@ async function startServer() {
             .replace(/[^a-z0-9]+/g, '-');
         }
 
-        try {
-          const existingProfile = await db
-            .select()
-            .from(photographers)
-            .where(eq(photographers.userUid, userUid));
+        const existingProfile = await db
+          .select()
+          .from(photographers)
+          .where(eq(photographers.userUid, userUid));
 
           let savedProfile;
           if (existingProfile.length === 0) {
@@ -1153,26 +401,10 @@ async function startServer() {
             savedProfile = fetched[0];
           }
 
-          return res.json({
-            success: true,
-            photographer: savedProfile,
-            message: 'Perfil salvo com sucesso no MySQL!',
-          });
-        } catch (dbErr) {
-          console.warn('DB photographer update fallback');
-        }
-
-        // Fallback response
-        const fallbackProfile = {
-          ...MOCK_PHOTOGRAPHERS[0],
-          ...data,
-          userUid,
-        };
-
-        res.json({
+        return res.json({
           success: true,
-          photographer: fallbackProfile,
-          message: 'Perfil salvo com sucesso!',
+          photographer: savedProfile,
+          message: 'Perfil salvo com sucesso no MySQL!',
         });
       } catch (err: any) {
         console.error('Error saving photographer profile:', err);
@@ -1187,8 +419,7 @@ async function startServer() {
       const photographerId = Number(req.params.id) || 1;
       const { coupleName, date, weddingLocation, rating, comment, verifiedBooking } = req.body;
 
-      try {
-        const [insertRes] = await db.insert(reviews).values({
+      const [insertRes] = await db.insert(reviews).values({
           photographerId,
           userUid: req.user?.uid || null,
           coupleName,
@@ -1218,28 +449,7 @@ async function startServer() {
           })
           .where(eq(photographers.id, photographerId));
 
-        return res
-          .status(201)
-          .json({ success: true, review: fetchedRev[0], message: 'Avaliação enviada com sucesso!' });
-      } catch (dbErr) {
-        console.warn('DB Review insert fallback');
-      }
-
-      const mockRev = {
-        id: String(Date.now()),
-        coupleName,
-        date: date || 'Recente',
-        weddingLocation: weddingLocation || '',
-        rating: Number(rating) || 5,
-        comment,
-        verifiedBooking: verifiedBooking !== false,
-      };
-
-      res.status(201).json({
-        success: true,
-        review: mockRev,
-        message: 'Avaliação enviada com sucesso!',
-      });
+      return res.status(201).json({ success: true, review: fetchedRev[0], message: 'Avaliação enviada com sucesso!' });
     } catch (err: any) {
       res.status(500).json({ success: false, error: err?.message });
     }
@@ -1253,25 +463,13 @@ async function startServer() {
     async (req: AuthRequest, res) => {
       try {
         const { reviewId, replyText } = req.body;
-        try {
-          await db
-            .update(reviews)
-            .set({ photographerReply: replyText })
-            .where(eq(reviews.id, Number(reviewId)));
+        await db
+          .update(reviews)
+          .set({ photographerReply: replyText })
+          .where(eq(reviews.id, Number(reviewId)));
 
-          const fetched = await db
-            .select()
-            .from(reviews)
-            .where(eq(reviews.id, Number(reviewId)));
-          return res.json({ success: true, review: fetched[0] });
-        } catch (dbErr) {
-          console.warn('DB Reply Review fallback');
-        }
-
-        res.json({
-          success: true,
-          review: { id: reviewId, photographerReply: replyText },
-        });
+        const fetched = await db.select().from(reviews).where(eq(reviews.id, Number(reviewId)));
+        return res.json({ success: true, review: fetched[0] });
       } catch (err: any) {
         res.status(500).json({ success: false, error: err?.message });
       }
@@ -1286,10 +484,9 @@ async function startServer() {
     async (req: AuthRequest, res) => {
       try {
         const photographerId = Number(req.params.id) || 1;
-        const { url, caption, category, featured, type, thumbnail, embedUrl } = req.body;
+        const { url, caption, category, featured, type, thumbnail, embedUrl, sortOrder } = req.body;
 
-        try {
-          const [insertRes] = await db.insert(photographerMedia).values({
+        const [insertRes] = await db.insert(photographerMedia).values({
             photographerId,
             type: type || 'photo',
             url,
@@ -1298,6 +495,7 @@ async function startServer() {
             featured: Boolean(featured),
             thumbnail: thumbnail || null,
             embedUrl: embedUrl || null,
+            sortOrder: Number(sortOrder) || 0,
           });
 
           const newId = (insertRes as any).insertId;
@@ -1305,20 +503,7 @@ async function startServer() {
             .select()
             .from(photographerMedia)
             .where(eq(photographerMedia.id, newId));
-          return res.status(201).json({ success: true, media: fetchedMedia[0] });
-        } catch (dbErr) {
-          console.warn('DB Media insert fallback');
-        }
-
-        const fallbackMedia = {
-          id: String(Date.now()),
-          url,
-          caption: caption || '',
-          category: category || 'Cerimônia',
-          featured: Boolean(featured),
-        };
-
-        res.status(201).json({ success: true, media: fallbackMedia });
+        return res.status(201).json({ success: true, media: fetchedMedia[0] });
       } catch (err: any) {
         res.status(500).json({ success: false, error: err?.message });
       }
@@ -1333,14 +518,46 @@ async function startServer() {
     async (req: AuthRequest, res) => {
       try {
         const mediaId = Number(req.params.mediaId);
-        try {
-          await db.delete(photographerMedia).where(eq(photographerMedia.id, mediaId));
-        } catch (dbErr) {
-          console.warn('DB media delete fallback');
-        }
+        await db.delete(photographerMedia).where(eq(photographerMedia.id, mediaId));
         res.json({ success: true, message: 'Mídia removida com sucesso' });
       } catch (err: any) {
         res.status(500).json({ success: false, error: err?.message });
+      }
+    }
+  );
+
+  // Update Gallery Media
+  app.patch(
+    '/api/photographers/media/:mediaId',
+    requireAuth,
+    requirePhotographerOrAdmin,
+    async (req: AuthRequest, res) => {
+      try {
+        const mediaId = Number(req.params.mediaId);
+        const existing = await db.select().from(photographerMedia).where(eq(photographerMedia.id, mediaId)).limit(1);
+        if (!existing.length) return res.status(404).json({ success: false, error: 'Mídia não encontrada.' });
+
+        const owner = await db.select().from(photographers)
+          .where(eq(photographers.id, existing[0].photographerId))
+          .limit(1);
+        const role = String(req.user?.role || '').toLowerCase();
+        const isAdmin = role === 'admin' || role === 'super_admin' || role === 'superadmin';
+        if (!isAdmin && owner[0]?.userUid !== req.user?.uid) {
+          return res.status(403).json({ success: false, error: 'Você não pode alterar esta mídia.' });
+        }
+
+        const { caption, category, featured, sortOrder } = req.body;
+        await db.update(photographerMedia).set({
+          ...(caption !== undefined ? { caption: String(caption) } : {}),
+          ...(category !== undefined ? { category: String(category) } : {}),
+          ...(featured !== undefined ? { featured: Boolean(featured) } : {}),
+          ...(sortOrder !== undefined ? { sortOrder: Number(sortOrder) } : {}),
+        }).where(eq(photographerMedia.id, mediaId));
+
+        const updated = await db.select().from(photographerMedia).where(eq(photographerMedia.id, mediaId)).limit(1);
+        return res.json({ success: true, media: updated[0] });
+      } catch (err: any) {
+        return res.status(500).json({ success: false, error: err?.message });
       }
     }
   );
@@ -1355,8 +572,7 @@ async function startServer() {
         const photographerId = Number(req.params.id) || 1;
         const { name, price, description, popular, features, deliverables } = req.body;
 
-        try {
-          const [insertRes] = await db.insert(photographerPackages).values({
+        const [insertRes] = await db.insert(photographerPackages).values({
             photographerId,
             name,
             price: Number(price),
@@ -1371,22 +587,7 @@ async function startServer() {
             .select()
             .from(photographerPackages)
             .where(eq(photographerPackages.id, newId));
-          return res.status(201).json({ success: true, package: fetchedPkg[0] });
-        } catch (dbErr) {
-          console.warn('DB package insert fallback');
-        }
-
-        const fallbackPkg = {
-          id: String(Date.now()),
-          name,
-          price: Number(price),
-          description,
-          popular: Boolean(popular),
-          features: features || [],
-          deliverables: deliverables || [],
-        };
-
-        res.status(201).json({ success: true, package: fallbackPkg });
+        return res.status(201).json({ success: true, package: fetchedPkg[0] });
       } catch (err: any) {
         res.status(500).json({ success: false, error: err?.message });
       }
@@ -1400,13 +601,7 @@ async function startServer() {
     try {
       const { photographerId, photographerSlug } = req.query;
 
-      let allLeads: any[] = [];
-      try {
-        allLeads = await db.select().from(leads).orderBy(desc(leads.createdAt));
-      } catch (dbErr) {
-        console.warn('DB leads fetch fallback to in-memory list');
-        allLeads = inMemoryLeads;
-      }
+      let allLeads: any[] = await db.select().from(leads).orderBy(desc(leads.createdAt));
 
       if (photographerSlug) {
         allLeads = allLeads.filter(
@@ -1436,30 +631,7 @@ async function startServer() {
         photographerId = body.photographerId;
       }
 
-      const newLeadData = {
-        id: Date.now(),
-        userUid,
-        photographerId,
-        coupleName: body.coupleName,
-        email: body.email,
-        phone: body.phone || '',
-        whatsapp: body.whatsapp || '',
-        weddingDate: body.weddingDate || '',
-        city: body.city || '',
-        state: body.state || '',
-        venueType: body.venueType || '',
-        estimatedGuests: Number(body.estimatedGuests) || 0,
-        budgetLimit: Number(body.budgetLimit) || 0,
-        servicesNeeded: body.servicesNeeded || [],
-        stylePreference: body.stylePreference || '',
-        photographerIds: body.photographerIds || (body.photographerId ? [String(body.photographerId)] : []),
-        message: body.message || '',
-        status: 'Novo',
-        createdAt: new Date().toISOString(),
-      };
-
-      try {
-        const [insertRes] = await db.insert(leads).values({
+      const [insertRes] = await db.insert(leads).values({
           userUid,
           photographerId,
           coupleName: body.coupleName,
@@ -1482,23 +654,34 @@ async function startServer() {
         const newId = (insertRes as any).insertId;
         const fetchedLead = await db.select().from(leads).where(eq(leads.id, newId));
 
-        return res.status(201).json({
+        if (photographerId) {
+          const [photographer] = await db.select({ userUid: photographers.userUid }).from(photographers).where(eq(photographers.id, photographerId)).limit(1);
+          if (photographer?.userUid) {
+            const [recipient] = await db.select({ id: users.id, role: users.role }).from(users).where(eq(users.uid, photographer.userUid)).limit(1);
+            if (recipient) {
+              await NotificationEventService.emit({
+                eventType: 'QUOTE_RECEIVED',
+                userId: recipient.id,
+                userType: 'PHOTOGRAPHER',
+                title: 'Novo pedido de orçamento',
+                message: `${body.coupleName || 'Um casal'} solicitou um orçamento para ${body.city || 'o casamento'}.`,
+                category: 'QUOTE',
+                priority: 'HIGH',
+                actionUrl: `/painel?orcamento=${newId}`,
+                resourceType: 'LEAD',
+                resourceId: newId,
+                deduplicationKey: `quote-received-${newId}-${recipient.id}`,
+              });
+            }
+          }
+        }
+
+      return res.status(201).json({
           success: true,
           message:
             'Solicitação de orçamento enviada com sucesso! O fotógrafo entrará em contato em breve.',
           lead: fetchedLead[0],
         });
-      } catch (dbErr) {
-        console.warn('DB insert lead fallback');
-        inMemoryLeads.unshift(newLeadData);
-      }
-
-      res.status(201).json({
-        success: true,
-        message:
-          'Solicitação de orçamento enviada com sucesso! O fotógrafo entrará em contato em breve.',
-        lead: newLeadData,
-      });
     } catch (err: any) {
       console.error('Error submitting lead:', err);
       res.status(500).json({ success: false, error: err?.message || 'Erro ao enviar lead' });
@@ -1515,18 +698,10 @@ async function startServer() {
         const leadId = Number(req.params.id);
         const { status } = req.body;
 
-        try {
-          await db.update(leads).set({ status }).where(eq(leads.id, leadId));
-          const fetched = await db.select().from(leads).where(eq(leads.id, leadId));
-          if (fetched.length > 0) return res.json({ success: true, lead: fetched[0] });
-        } catch (dbErr) {
-          console.warn('DB update lead status fallback');
-        }
-
-        const memLead = inMemoryLeads.find((l) => l.id === leadId);
-        if (memLead) memLead.status = status;
-
-        res.json({ success: true, lead: memLead || { id: leadId, status } });
+        await db.update(leads).set({ status }).where(eq(leads.id, leadId));
+        const fetched = await db.select().from(leads).where(eq(leads.id, leadId));
+        if (!fetched.length) return res.status(404).json({ success: false, error: 'Orçamento não encontrado.' });
+        return res.json({ success: true, lead: fetched[0] });
       } catch (err: any) {
         res.status(500).json({ success: false, error: err?.message });
       }
@@ -1548,9 +723,7 @@ async function startServer() {
 
       res.json({ success: true, categories: activeCategories });
     } catch (err: any) {
-      console.warn('MySQL unavailable for public categories, using inMemory fallback');
-      const activeCats = inMemoryCategories.filter((c) => c.status === 'active' && !c.deletedAt);
-      res.json({ success: true, categories: activeCats });
+      res.status(503).json({ success: false, error: 'MySQL indisponível.', details: err.message });
     }
   });
 
@@ -1592,32 +765,7 @@ async function startServer() {
 
       res.json({ success: true, states: resultStates });
     } catch (err: any) {
-      console.warn('MySQL unavailable for navigation locations, using inMemory fallback');
-      const activeStates = inMemoryStates.filter((st) => st.showInNavigation && st.status === 'active' && !st.deletedAt);
-      const activeCities = inMemoryCities.filter((c) => c.showInNavigation && c.status === 'active' && !c.deletedAt);
-
-      const resultStates = activeStates.map((st) => {
-        const stateCities = activeCities
-          .filter((c) => c.stateId === st.id || c.stateUf === st.uf)
-          .map((c) => ({
-            id: c.id,
-            name: c.name,
-            slug: c.slug,
-            featured: c.featured,
-            url: c.slug.startsWith('/') ? c.slug : `/${c.slug}`,
-          }));
-
-        return {
-          id: st.id,
-          name: st.name,
-          uf: st.uf,
-          slug: st.slug,
-          photographersCount: st.photographersCount || 0,
-          cities: stateCities,
-        };
-      });
-
-      res.json({ success: true, states: resultStates });
+      res.status(503).json({ success: false, error: 'MySQL indisponível.', details: err.message });
     }
   });
 
@@ -1625,29 +773,12 @@ async function startServer() {
   app.get('/api/states/:slug', async (req, res) => {
     try {
       const { slug } = req.params;
-      let st: any = null;
-      let stateCities: any[] = [];
-
-      try {
-        const stateList = await db
-          .select()
-          .from(states)
-          .where(and(eq(states.slug, slug), isNull(states.deletedAt)));
-
-        if (stateList.length > 0) {
-          st = stateList[0];
-          stateCities = await db
-            .select()
-            .from(cities)
-            .where(and(eq(cities.stateUf, st.uf), isNull(cities.deletedAt)))
-            .orderBy(asc(cities.sortOrder), asc(cities.name));
-        }
-      } catch (dbErr) {
-        st = inMemoryStates.find((s) => (s.slug === slug || s.uf.toLowerCase() === slug.toLowerCase()) && !s.deletedAt);
-        if (st) {
-          stateCities = inMemoryCities.filter((c) => (c.stateUf === st.uf || c.stateId === st.id) && !c.deletedAt);
-        }
-      }
+      const stateList = await db.select().from(states)
+        .where(and(eq(states.slug, slug), isNull(states.deletedAt)));
+      const st = stateList[0] || null;
+      const stateCities = st ? await db.select().from(cities)
+        .where(and(eq(cities.stateUf, st.uf), isNull(cities.deletedAt)))
+        .orderBy(asc(cities.sortOrder), asc(cities.name)) : [];
 
       if (!st) {
         return res.status(404).json({ success: false, error: 'Estado não encontrado' });
@@ -1663,20 +794,9 @@ async function startServer() {
   app.get('/api/cities/:slug', async (req, res) => {
     try {
       const { slug } = req.params;
-      let cityItem: any = null;
-
-      try {
-        const cityList = await db
-          .select()
-          .from(cities)
-          .where(and(eq(cities.slug, slug), isNull(cities.deletedAt)));
-
-        if (cityList.length > 0) {
-          cityItem = cityList[0];
-        }
-      } catch (dbErr) {
-        cityItem = inMemoryCities.find((c) => c.slug === slug && !c.deletedAt);
-      }
+      const cityList = await db.select().from(cities)
+        .where(and(eq(cities.slug, slug), isNull(cities.deletedAt)));
+      const cityItem = cityList[0] || null;
 
       if (!cityItem) {
         return res.status(404).json({ success: false, error: 'Cidade não encontrada' });
@@ -1688,19 +808,12 @@ async function startServer() {
     }
   });
 
-  // Legacy Public States/Cities fallback routes
+  // Legacy-compatible public routes, backed exclusively by MySQL.
   app.get('/api/states', async (req, res) => {
     try {
-      let statesList: any[] = [];
-      try {
-        statesList = await db
-          .select()
-          .from(states)
-          .where(isNull(states.deletedAt))
-          .orderBy(asc(states.sortOrder), asc(states.name));
-      } catch (dbErr) {
-        statesList = inMemoryStates.filter((s) => !s.deletedAt);
-      }
+      const statesList = await db.select().from(states)
+        .where(isNull(states.deletedAt))
+        .orderBy(asc(states.sortOrder), asc(states.name));
 
       res.json({ success: true, states: statesList });
     } catch (err: any) {
@@ -1710,16 +823,9 @@ async function startServer() {
 
   app.get('/api/cities', async (req, res) => {
     try {
-      let citiesList: any[] = [];
-      try {
-        citiesList = await db
-          .select()
-          .from(cities)
-          .where(isNull(cities.deletedAt))
-          .orderBy(asc(cities.sortOrder), asc(cities.name));
-      } catch (dbErr) {
-        citiesList = inMemoryCities.filter((c) => !c.deletedAt);
-      }
+      const citiesList = await db.select().from(cities)
+        .where(isNull(cities.deletedAt))
+        .orderBy(asc(cities.sortOrder), asc(cities.name));
 
       res.json({ success: true, cities: citiesList });
     } catch (err: any) {
@@ -1738,42 +844,24 @@ async function startServer() {
       let allCats: any[] = [];
       const countMap: Record<number, number> = {};
 
-      try {
-        allCats = await db
-          .select()
-          .from(categories)
-          .where(isNull(categories.deletedAt))
-          .orderBy(asc(categories.sortOrder), asc(categories.name));
+      allCats = await db.select().from(categories)
+        .where(isNull(categories.deletedAt))
+        .orderBy(asc(categories.sortOrder), asc(categories.name));
 
-        const photoCats = await db.select().from(photographerCategories);
-        const photoList = await db.select().from(photographers);
+      const photoCats = await db.select().from(photographerCategories);
+      const photoList = await db.select().from(photographers);
 
         photoCats.forEach((pc) => {
           countMap[pc.categoryId] = (countMap[pc.categoryId] || 0) + 1;
         });
 
-        photoList.forEach((p) => {
-          if (Array.isArray(p.categories)) {
-            allCats.forEach((c) => {
-              if (p.categories.includes(c.name)) {
-                countMap[c.id] = (countMap[c.id] || 0) + 1;
-              }
-            });
-          }
-        });
-      } catch (dbErr) {
-        console.warn('MySQL unavailable for admin categories, using inMemoryCategories fallback');
-        allCats = JSON.parse(JSON.stringify(inMemoryCategories.filter((c) => !c.deletedAt)));
-        MOCK_PHOTOGRAPHERS.forEach((p) => {
-          if (Array.isArray(p.categories)) {
-            allCats.forEach((c) => {
-              if (p.categories.includes(c.name)) {
-                countMap[c.id] = (countMap[c.id] || 0) + 1;
-              }
-            });
-          }
-        });
-      }
+      photoList.forEach((p) => {
+        if (Array.isArray(p.categories)) {
+          allCats.forEach((c) => {
+            if (p.categories.includes(c.name)) countMap[c.id] = (countMap[c.id] || 0) + 1;
+          });
+        }
+      });
 
       let filtered = allCats.map((c) => ({
         ...c,
@@ -3168,90 +2256,360 @@ async function startServer() {
   });
 
   // ==========================================
+  // --- PHOTOGRAPHER SUBSCRIPTIONS APIS ---
+  // ==========================================
+
+  // GET /api/photographer/subscription (Active Plan & Permissions Resolution)
+  app.get('/api/photographer/subscription', optionalAuth, async (req: AuthRequest, res) => {
+    try {
+      let photographerId: number | undefined = req.user?.photographerId ? Number(req.user.photographerId) : undefined;
+
+      if (!photographerId && req.query.photographerId) {
+        photographerId = Number(req.query.photographerId);
+      }
+
+      if (!photographerId && req.user?.uid) {
+        const p = await db.select().from(photographers).where(eq(photographers.userUid, req.user.uid));
+        if (p.length > 0) photographerId = Number(p[0].id);
+      }
+
+      if (!photographerId) {
+        const defaultFree = await SubscriptionService.getDefaultFreePlan();
+        return res.json({
+          success: true,
+          effectivePlan: {
+            plan: defaultFree,
+            subscription: null,
+            permissions: {
+              gallery_photos_limit: 10,
+              service_cities_limit: 1,
+              categories_limit: 1,
+              monthly_leads_limit: 5,
+              verified_badge: false,
+              premium_badge: false,
+              whatsapp_direct: false,
+              search_priority: false,
+              crm_access: true,
+              fixed_home_position: false,
+              real_weddings_publication: false,
+              vip_support: false,
+              click_reports: false,
+            },
+            isFree: true,
+            effectiveStatus: 'ACTIVE',
+          },
+        });
+      }
+
+      const effectivePlan = await SubscriptionService.getEffectivePlan(photographerId);
+
+      const history = await db
+        .select()
+        .from(subscriptionHistory)
+        .where(eq(subscriptionHistory.photographerId, photographerId))
+        .orderBy(desc(subscriptionHistory.id))
+        .limit(20);
+
+      const payments = await db
+        .select()
+        .from(subscriptionPayments)
+        .where(eq(subscriptionPayments.photographerId, photographerId))
+        .orderBy(desc(subscriptionPayments.id))
+        .limit(20);
+
+      res.json({
+        success: true,
+        effectivePlan,
+        history,
+        payments,
+      });
+    } catch (err: any) {
+      console.error('Error fetching photographer subscription:', err);
+      res.status(500).json({ success: false, error: err?.message || 'Erro ao consultar assinatura' });
+    }
+  });
+
+  // POST /api/photographer/subscription/simulate-payment
+  app.post('/api/photographer/subscription/simulate-payment', optionalAuth, async (req: AuthRequest, res) => {
+    try {
+      // Security check: Block simulator in production environment
+      if (process.env.NODE_ENV === 'production' && process.env.ENABLE_SIMULATOR !== 'true') {
+        return res.status(403).json({
+          success: false,
+          error: 'Acesso Proibido. O simulador de pagamento está desativado em ambiente de produção.',
+        });
+      }
+
+      const {
+        planId,
+        billingCycle = 'MONTHLY',
+        simulationOutcome = 'APPROVED',
+        paymentMethod,
+        installments,
+        externalPaymentId,
+        simulationEventId,
+      } = req.body;
+
+      let photographerId: number | undefined = req.body.photographerId
+        ? Number(req.body.photographerId)
+        : (req.user?.photographerId ? Number(req.user.photographerId) : undefined);
+
+      if (!photographerId && req.user?.uid) {
+        const p = await db.select().from(photographers).where(eq(photographers.userUid, req.user.uid));
+        if (p.length > 0) photographerId = Number(p[0].id);
+      }
+
+      if (!photographerId) {
+        const allP = await db.select().from(photographers).limit(1);
+        if (allP.length > 0) photographerId = Number(allP[0].id);
+        else return res.status(400).json({ success: false, error: 'Nenhum fotógrafo encontrado para assinar.' });
+      }
+
+      const result = await SubscriptionService.simulatePayment({
+        photographerId,
+        planId: Number(planId),
+        billingCycle,
+        simulationOutcome,
+        paymentMethod,
+        installments: Number(installments) || 1,
+        externalPaymentId,
+        simulationEventId,
+        adminId: req.user?.role === 'ADMIN' ? String(req.user.id) : undefined,
+      });
+
+      res.json(result);
+    } catch (err: any) {
+      console.error('Error simulating payment:', err);
+      res.status(500).json({ success: false, error: err?.message || 'Erro na simulação do pagamento' });
+    }
+  });
+
+  // POST /api/photographer/subscription/cancel
+  app.post('/api/photographer/subscription/cancel', optionalAuth, async (req: AuthRequest, res) => {
+    try {
+      const { reason } = req.body;
+      let photographerId = req.body.photographerId || req.user?.photographerId;
+
+      if (!photographerId && req.user?.uid) {
+        const p = await db.select().from(photographers).where(eq(photographers.userUid, req.user.uid));
+        if (p.length > 0) photographerId = p[0].id;
+      }
+
+      if (!photographerId) return res.status(400).json({ success: false, error: 'Fotógrafo não identificado.' });
+
+      const result = await SubscriptionService.requestCancellation(photographerId, reason);
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err?.message });
+    }
+  });
+
+  // POST /api/photographer/subscription/reactivate-cancellation
+  app.post('/api/photographer/subscription/reactivate-cancellation', optionalAuth, async (req: AuthRequest, res) => {
+    try {
+      let photographerId = req.body.photographerId || req.user?.photographerId;
+
+      if (!photographerId && req.user?.uid) {
+        const p = await db.select().from(photographers).where(eq(photographers.userUid, req.user.uid));
+        if (p.length > 0) photographerId = p[0].id;
+      }
+
+      if (!photographerId) return res.status(400).json({ success: false, error: 'Fotógrafo não identificado.' });
+
+      const result = await SubscriptionService.reactivateCancellation(photographerId);
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err?.message });
+    }
+  });
+
+  // ==========================================
+  // --- ADMIN SUBSCRIPTIONS MANAGEMENT APIS ---
+  // ==========================================
+
+  // GET /api/admin/subscriptions (List & Comprehensive Financial Metrics)
+  app.get('/api/admin/subscriptions', requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const { q, status, planId, billingCycle, expiringInDays, page = 1, limit = 50 } = req.query;
+
+      await SubscriptionService.checkAndExpireSubscriptions();
+      const metrics = await SubscriptionService.getAdminSubscriptionMetrics();
+
+      let allSubs = await db.select().from(photographerSubscriptions).orderBy(desc(photographerSubscriptions.id));
+      const now = new Date();
+
+      const populatedSubs = await Promise.all(
+        allSubs.map(async (sub) => {
+          const photo = await db.select().from(photographers).where(eq(photographers.id, sub.photographerId));
+          const plan = sub.planId ? await db.select().from(subscriptionPlans).where(eq(subscriptionPlans.id, sub.planId)) : [];
+          return {
+            ...sub,
+            photographer: photo[0] || null,
+            plan: plan[0] || null,
+          };
+        })
+      );
+
+      let filtered = populatedSubs;
+
+      if (q && typeof q === 'string' && q.trim()) {
+        const queryClean = q.toLowerCase().trim();
+        filtered = filtered.filter(
+          (s) =>
+            s.photographer?.name?.toLowerCase().includes(queryClean) ||
+            s.photographer?.studioName?.toLowerCase().includes(queryClean) ||
+            s.photographer?.email?.toLowerCase().includes(queryClean) ||
+            s.plan?.name?.toLowerCase().includes(queryClean)
+        );
+      }
+
+      if (status && status !== 'all') {
+        filtered = filtered.filter((s) => s.status === status);
+      }
+
+      if (planId && planId !== 'all') {
+        filtered = filtered.filter((s) => s.planId === Number(planId));
+      }
+
+      if (billingCycle && billingCycle !== 'all') {
+        filtered = filtered.filter((s) => s.billingCycle === billingCycle);
+      }
+
+      if (expiringInDays) {
+        const days = Number(expiringInDays);
+        const targetDate = new Date();
+        targetDate.setDate(targetDate.getDate() + days);
+
+        filtered = filtered.filter((s) => {
+          if (!s.currentPeriodEnd) return false;
+          const pEnd = new Date(s.currentPeriodEnd);
+          return pEnd >= now && pEnd <= targetDate;
+        });
+      }
+
+      const p = Number(page) || 1;
+      const l = Number(limit) || 50;
+      const total = filtered.length;
+      const paginated = filtered.slice((p - 1) * l, p * l);
+
+      res.json({
+        success: true,
+        subscriptions: paginated,
+        total,
+        page: p,
+        limit: l,
+        totalPages: Math.ceil(total / l),
+        metrics,
+      });
+    } catch (err: any) {
+      console.error('Error fetching admin subscriptions:', err);
+      res.status(500).json({ success: false, error: err?.message });
+    }
+  });
+
+  // POST /api/admin/subscriptions/manual (Manual Activation & Courtesy)
+  app.post('/api/admin/subscriptions/manual', requireAuth, requireAdmin, async (req: AuthRequest, res) => {
+    try {
+      const { photographerId, planId, billingCycle = 'MONTHLY', startsAt, endsAt, amount, notes, isComplimentary = false } = req.body;
+
+      if (!photographerId || !planId) {
+        return res.status(400).json({ success: false, error: 'Fotógrafo e Plano são obrigatórios.' });
+      }
+
+      const result = await SubscriptionService.adminManualActivation({
+        photographerId: Number(photographerId),
+        planId: Number(planId),
+        billingCycle,
+        startsAt,
+        endsAt,
+        amount: Number(amount) || 0,
+        notes,
+        isComplimentary: Boolean(isComplimentary),
+        adminId: String(req.user!.id),
+      });
+
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err?.message });
+    }
+  });
+
+  // POST /api/admin/subscriptions/:id/suspend
+  app.post('/api/admin/subscriptions/:id/suspend', requireAuth, requireAdmin, async (req: AuthRequest, res) => {
+    try {
+      const id = Number(req.params.id);
+      const { reason } = req.body;
+      const result = await SubscriptionService.adminSuspendSubscription(id, reason || 'Suspenso pelo admin', String(req.user!.id));
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err?.message });
+    }
+  });
+
+  // POST /api/admin/subscriptions/:id/reactivate
+  app.post('/api/admin/subscriptions/:id/reactivate', requireAuth, requireAdmin, async (req: AuthRequest, res) => {
+    try {
+      const id = Number(req.params.id);
+      const { compensateDays = true, reason } = req.body;
+      const result = await SubscriptionService.adminReactivateSubscription(id, Boolean(compensateDays), reason, String(req.user!.id));
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err?.message });
+    }
+  });
+
+  // POST /api/admin/subscriptions/:id/cancel
+  app.post('/api/admin/subscriptions/:id/cancel', requireAuth, requireAdmin, async (req: AuthRequest, res) => {
+    try {
+      const id = Number(req.params.id);
+      const { cancelImmediately = true, reason } = req.body;
+      const result = await SubscriptionService.adminCancelSubscription(id, Boolean(cancelImmediately), reason, String(req.user!.id));
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err?.message });
+    }
+  });
+
+  // POST /api/admin/subscriptions/:id/chargeback
+  app.post('/api/admin/subscriptions/:id/chargeback', requireAuth, requireAdmin, async (req: AuthRequest, res) => {
+    try {
+      const id = Number(req.params.id);
+      const { paymentId, reason } = req.body;
+      const result = await SubscriptionService.adminHandleChargeback(id, paymentId ? Number(paymentId) : undefined, reason, String(req.user!.id));
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err?.message });
+    }
+  });
+
+  // POST /api/admin/subscriptions/refund
+  app.post('/api/admin/subscriptions/refund', requireAuth, requireAdmin, async (req: AuthRequest, res) => {
+    try {
+      const { photographerId, planId, amount, paymentId, isPartial = false, cancelSub = true } = req.body;
+      const result = await SubscriptionService.adminRefundPayment({
+        photographerId: Number(photographerId),
+        planId: planId ? Number(planId) : undefined,
+        amount: Number(amount) || 0,
+        paymentId: paymentId ? Number(paymentId) : undefined,
+        isPartial: Boolean(isPartial),
+        cancelSub: Boolean(cancelSub),
+        adminId: String(req.user!.id),
+      });
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err?.message });
+    }
+  });
+
+  // ==========================================
   // --- IBGE IMPORT FUNCTION FOR ALL BRAZIL ---
   // ==========================================
   app.post('/api/admin/import-ibge-locations', requireAuth, requireAdmin, async (req, res) => {
     try {
-      const { setNavigationActive = false } = req.body;
-
-      let statesImported = 0;
-      let statesUpdated = 0;
-      let citiesImported = 0;
-      let citiesUpdated = 0;
-      let citiesIgnored = 0;
-
-      // Import States first
-      for (let i = 0; i < BRAZIL_STATES.length; i++) {
-        const st = BRAZIL_STATES[i];
-        const stateSlug = st.name.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-');
-        const existing = await db.select().from(states).where(eq(states.uf, st.uf));
-
-        if (existing.length === 0) {
-          await db.insert(states).values({
-            uf: st.uf,
-            name: st.name,
-            slug: stateSlug,
-            photographersCount: st.photographersCount,
-            showInNavigation: setNavigationActive,
-            sortOrder: i + 1,
-            status: 'active',
-            seoTitle: `Fotógrafos de Casamento em ${st.name} - ${st.uf}`,
-            seoDescription: `Encontre fotógrafos de casamento em ${st.name}. Orçamentos grátis.`,
-          });
-          statesImported++;
-        } else {
-          statesUpdated++;
-        }
-      }
-
-      // Re-fetch states to map IDs
-      const dbStates = await db.select().from(states);
-      const stateMap: Record<string, number> = {};
-      dbStates.forEach((s) => {
-        stateMap[s.uf] = s.id;
-      });
-
-      // Import Cities
-      for (const st of BRAZIL_STATES) {
-        const stId = stateMap[st.uf] || null;
-        for (let cIdx = 0; cIdx < st.topCities.length; cIdx++) {
-          const cName = st.topCities[cIdx];
-          const citySlug = `fotografo-casamento-${cName.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-')}`;
-
-          const existingCity = await db.select().from(cities).where(eq(cities.slug, citySlug));
-          if (existingCity.length === 0) {
-            await db.insert(cities).values({
-              stateId: stId,
-              stateUf: st.uf,
-              name: cName,
-              slug: citySlug,
-              introductoryText: `Encontre os melhores fotógrafos de casamento em ${cName} - ${st.uf}. Compare preços, portfólios e peça orçamentos.`,
-              heroText: `Fotógrafos em ${cName}`,
-              seoTitle: `Fotógrafos de Casamento em ${cName} - ${st.uf} | Orçamentos Grátis`,
-              seoDescription: `Lista completa dos melhores fotógrafos em ${cName}, ${st.uf}.`,
-              showInNavigation: setNavigationActive,
-              featured: cIdx === 0,
-              sortOrder: cIdx + 1,
-              status: 'active',
-            });
-            citiesImported++;
-          } else {
-            citiesUpdated++;
-          }
-        }
-      }
-
-      res.json({
-        success: true,
-        report: {
-          statesImported,
-          statesUpdated,
-          citiesImported,
-          citiesUpdated,
-          citiesIgnored,
-        },
-        message: `Importação IBGE concluída! ${statesImported} estados e ${citiesImported} cidades importados.`,
-      });
+      await seedDatabase();
+      const stateCount = (await db.select().from(states)).length;
+      const cityCount = (await db.select().from(cities)).length;
+      res.json({ success: true, report: { states: stateCount, cities: cityCount }, message: 'Localidades iniciais sincronizadas no MySQL.' });
     } catch (err: any) {
       console.error('IBGE import error:', err);
       res.status(500).json({ success: false, error: err?.message || 'Erro ao executar importação IBGE' });
@@ -3261,17 +2619,8 @@ async function startServer() {
   // --- RECENT WEDDINGS (Casamentos Reais) API ---
   app.get('/api/recent-weddings', async (req, res) => {
     try {
-      try {
-        const list = await db
-          .select()
-          .from(recentWeddings)
-          .orderBy(desc(recentWeddings.createdAt));
-        if (list.length > 0) return res.json({ success: true, weddings: list });
-      } catch (dbErr) {
-        console.warn('DB recent weddings fallback');
-      }
-
-      res.json({ success: true, weddings: RECENT_WEDDINGS });
+      const list = await db.select().from(recentWeddings).orderBy(desc(recentWeddings.createdAt));
+      res.json({ success: true, weddings: list });
     } catch (err: any) {
       res.status(500).json({ success: false, error: err?.message });
     }
@@ -3280,20 +2629,9 @@ async function startServer() {
   app.get('/api/recent-weddings/:slug', async (req, res) => {
     try {
       const { slug } = req.params;
-      try {
-        const list = await db
-          .select()
-          .from(recentWeddings)
-          .where(eq(recentWeddings.slug, slug));
-        if (list.length > 0) return res.json({ success: true, wedding: list[0] });
-      } catch (dbErr) {
-        console.warn('DB recent wedding single fallback');
-      }
-
-      const rw = RECENT_WEDDINGS.find((w) => w.slug === slug || w.id === slug);
-      if (rw) return res.json({ success: true, wedding: rw });
-
-      res.status(404).json({ success: false, error: 'Casamento não encontrado' });
+      const list = await db.select().from(recentWeddings).where(eq(recentWeddings.slug, slug));
+      if (!list.length) return res.status(404).json({ success: false, error: 'Casamento não encontrado' });
+      res.json({ success: true, wedding: list[0] });
     } catch (err: any) {
       res.status(500).json({ success: false, error: err?.message });
     }
@@ -3302,14 +2640,8 @@ async function startServer() {
   // --- BLOG ARTICLES API ---
   app.get('/api/blog', async (req, res) => {
     try {
-      try {
-        const list = await db.select().from(blogArticles).orderBy(desc(blogArticles.createdAt));
-        if (list.length > 0) return res.json({ success: true, articles: list });
-      } catch (dbErr) {
-        console.warn('DB blog fetch fallback');
-      }
-
-      res.json({ success: true, articles: BLOG_ARTICLES });
+      const list = await db.select().from(blogArticles).orderBy(desc(blogArticles.createdAt));
+      res.json({ success: true, articles: list });
     } catch (err: any) {
       res.status(500).json({ success: false, error: err?.message });
     }
@@ -3318,17 +2650,9 @@ async function startServer() {
   app.get('/api/blog/:slug', async (req, res) => {
     try {
       const { slug } = req.params;
-      try {
-        const list = await db.select().from(blogArticles).where(eq(blogArticles.slug, slug));
-        if (list.length > 0) return res.json({ success: true, article: list[0] });
-      } catch (dbErr) {
-        console.warn('DB blog article fallback');
-      }
-
-      const art = BLOG_ARTICLES.find((a) => a.slug === slug || a.id === slug);
-      if (art) return res.json({ success: true, article: art });
-
-      res.status(404).json({ success: false, error: 'Artigo não encontrado' });
+      const list = await db.select().from(blogArticles).where(eq(blogArticles.slug, slug));
+      if (!list.length) return res.status(404).json({ success: false, error: 'Artigo não encontrado' });
+      res.json({ success: true, article: list[0] });
     } catch (err: any) {
       res.status(500).json({ success: false, error: err?.message });
     }
@@ -3337,60 +2661,7 @@ async function startServer() {
   // --- SUBSCRIPTION PLANS API ---
   app.get('/api/plans', async (req, res) => {
     try {
-      try {
-        const list = await db.select().from(subscriptionPlans);
-        if (list.length > 0) return res.json({ success: true, plans: list });
-      } catch (dbErr) {
-        console.warn('DB subscription plans fallback');
-      }
-
-      const plans = [
-        {
-          id: 1,
-          name: 'Gratuito',
-          slug: 'gratuito',
-          price: 0,
-          photoLimit: 6,
-          featured: false,
-          description: 'Perfil básico para fotógrafos iniciantes no portal.',
-          features: [
-            'Até 6 fotos na galeria',
-            'Receba solicitações de orçamento',
-            'Perfil na busca por cidade',
-          ],
-        },
-        {
-          id: 2,
-          name: 'Destaque',
-          slug: 'destaque',
-          price: 99,
-          photoLimit: 20,
-          featured: true,
-          description: 'Ideal para ter mais destaque e receber mais orçamentos.',
-          features: [
-            'Até 20 fotos e vídeos',
-            'Selo Verificado e Destaque',
-            'Botão de WhatsApp direto',
-            'Posição privilegiada nas buscas',
-          ],
-        },
-        {
-          id: 3,
-          name: 'Premium',
-          slug: 'premium',
-          price: 199,
-          photoLimit: 50,
-          featured: true,
-          description: 'Máxima visibilidade no portal, topo das buscas e banner.',
-          features: [
-            'Fotos ilimitadas e vídeos HD',
-            'Destaque na página inicial',
-            'Selo Premium + Top Avaliado',
-            'Acesso ao comparador e estatísticas detalhadas',
-          ],
-        },
-      ];
-
+      const plans = await db.select().from(subscriptionPlans).orderBy(asc(subscriptionPlans.sortOrder));
       res.json({ success: true, plans });
     } catch (err: any) {
       res.status(500).json({ success: false, error: err?.message });
@@ -3402,22 +2673,13 @@ async function startServer() {
     try {
       const userUid = req.user!.uid;
 
-      try {
-        const favs = await db.select().from(favorites).where(eq(favorites.userUid, userUid));
-        const photoIds = favs.map((f) => f.photographerId).filter(Boolean) as number[];
+      const favs = await db.select().from(favorites).where(eq(favorites.userUid, userUid));
+      const photoIds = favs.map((f) => f.photographerId).filter(Boolean) as number[];
 
-        if (photoIds.length > 0) {
-          const favPhotographers = await db
-            .select()
-            .from(photographers)
-            .where(inArray(photographers.id, photoIds));
-          return res.json({ success: true, favorites: favPhotographers });
-        }
-      } catch (dbErr) {
-        console.warn('DB favorites fetch fallback');
-      }
-
-      res.json({ success: true, favorites: inMemoryFavorites });
+      const favPhotographers = photoIds.length
+        ? await db.select().from(photographers).where(inArray(photographers.id, photoIds))
+        : [];
+      res.json({ success: true, favorites: favPhotographers });
     } catch (err: any) {
       res.status(500).json({ success: false, error: err?.message });
     }
@@ -3428,15 +2690,11 @@ async function startServer() {
       const userUid = req.user!.uid;
       const { photographerId } = req.body;
 
-      try {
-        await db.insert(favorites).values({
-          userUid,
-          photographerId: Number(photographerId),
-        });
-      } catch (dbErr) {
-        console.warn('DB favorite insert fallback');
-        inMemoryFavorites.push(photographerId);
-      }
+      const existing = await db.select().from(favorites).where(and(
+        eq(favorites.userUid, userUid),
+        eq(favorites.photographerId, Number(photographerId)),
+      )).limit(1);
+      if (!existing.length) await db.insert(favorites).values({ userUid, photographerId: Number(photographerId) });
 
       res.status(201).json({ success: true, message: 'Fotógrafo adicionado aos favoritos!' });
     } catch (err: any) {
@@ -3449,15 +2707,7 @@ async function startServer() {
       const userUid = req.user!.uid;
       const photographerId = Number(req.params.photographerId);
 
-      try {
-        await db
-          .delete(favorites)
-          .where(
-            and(eq(favorites.userUid, userUid), eq(favorites.photographerId, photographerId))
-          );
-      } catch (dbErr) {
-        console.warn('DB favorite delete fallback');
-      }
+      await db.delete(favorites).where(and(eq(favorites.userUid, userUid), eq(favorites.photographerId, photographerId)));
 
       res.json({ success: true, message: 'Removido dos favoritos' });
     } catch (err: any) {
@@ -3470,17 +2720,8 @@ async function startServer() {
     try {
       const userUid = req.user!.uid;
 
-      try {
-        const items = await db
-          .select()
-          .from(userChecklists)
-          .where(eq(userChecklists.userUid, userUid));
-        if (items.length > 0) return res.json({ success: true, items });
-      } catch (dbErr) {
-        console.warn('DB checklists fetch fallback');
-      }
-
-      res.json({ success: true, items: inMemoryChecklists });
+      const items = await db.select().from(userChecklists).where(eq(userChecklists.userUid, userUid));
+      res.json({ success: true, items });
     } catch (err: any) {
       res.status(500).json({ success: false, error: err?.message });
     }
@@ -3491,17 +2732,7 @@ async function startServer() {
       const userUid = req.user!.uid;
       const { task, timeframe, category } = req.body;
 
-      const newItem = {
-        id: Date.now(),
-        userUid,
-        task,
-        timeframe: timeframe || 'A qualquer momento',
-        category: category || 'Fotografia',
-        completed: false,
-      };
-
-      try {
-        const [insertRes] = await db.insert(userChecklists).values({
+      const [insertRes] = await db.insert(userChecklists).values({
           userUid,
           task,
           timeframe: timeframe || 'A qualquer momento',
@@ -3514,13 +2745,7 @@ async function startServer() {
           .select()
           .from(userChecklists)
           .where(eq(userChecklists.id, newId));
-        return res.status(201).json({ success: true, item: fetched[0] });
-      } catch (dbErr) {
-        console.warn('DB checklist insert fallback');
-        inMemoryChecklists.push(newItem);
-      }
-
-      res.status(201).json({ success: true, item: newItem });
+      return res.status(201).json({ success: true, item: fetched[0] });
     } catch (err: any) {
       res.status(500).json({ success: false, error: err?.message });
     }
@@ -3531,18 +2756,10 @@ async function startServer() {
       const id = Number(req.params.id);
       const { completed } = req.body;
 
-      try {
-        await db.update(userChecklists).set({ completed }).where(eq(userChecklists.id, id));
-        const fetched = await db.select().from(userChecklists).where(eq(userChecklists.id, id));
-        if (fetched.length > 0) return res.json({ success: true, item: fetched[0] });
-      } catch (dbErr) {
-        console.warn('DB checklist update fallback');
-      }
-
-      const item = inMemoryChecklists.find((c) => c.id === id);
-      if (item) item.completed = completed;
-
-      res.json({ success: true, item: item || { id, completed } });
+      await db.update(userChecklists).set({ completed }).where(eq(userChecklists.id, id));
+      const fetched = await db.select().from(userChecklists).where(eq(userChecklists.id, id));
+      if (!fetched.length) return res.status(404).json({ success: false, error: 'Item não encontrado.' });
+      res.json({ success: true, item: fetched[0] });
     } catch (err: any) {
       res.status(500).json({ success: false, error: err?.message });
     }
@@ -3555,8 +2772,7 @@ async function startServer() {
       const pId = Number(photographerId);
 
       if (pId) {
-        try {
-          await db.insert(clickLogs).values({
+        await db.insert(clickLogs).values({
             photographerId: pId,
             clickType: clickType || 'whatsapp',
           });
@@ -3567,14 +2783,11 @@ async function startServer() {
               .set({ whatsappClicks: sql`${photographers.whatsappClicks} + 1` })
               .where(eq(photographers.id, pId));
           }
-        } catch (dbErr) {
-          console.warn('DB click logs insert fallback');
-        }
       }
 
       res.json({ success: true });
     } catch (err: any) {
-      res.json({ success: true });
+      res.status(500).json({ success: false, error: err.message });
     }
   });
 
@@ -3641,30 +2854,17 @@ Formate a resposta em tópicos claros com markdown.`;
   // --- ADMIN METRICS API (Protected with requireAdmin) ---
   app.get('/api/admin/metrics', requireAuth, requireAdmin, async (req: AuthRequest, res) => {
     try {
-      let totalUsers = 3;
-      let totalPhotographers = MOCK_PHOTOGRAPHERS.length;
-      let approvedPhotographers = MOCK_PHOTOGRAPHERS.length;
-      let pendingPhotographers = 0;
-      let totalLeads = inMemoryLeads.length;
-      let totalReviews = MOCK_PHOTOGRAPHERS.reduce((acc, p) => acc + (p.reviewCount || 0), 0);
-      let premiumPhotographers = MOCK_PHOTOGRAPHERS.filter((p) => p.plan === 'Premium').length;
-
-      try {
-        const allUsers = await db.select().from(users);
-        const allPhotographers = await db.select().from(photographers);
-        const allLeads = await db.select().from(leads);
-        const allReviews = await db.select().from(reviews);
-
-        totalUsers = allUsers.length;
-        totalPhotographers = allPhotographers.length;
-        approvedPhotographers = allPhotographers.filter((p) => p.status === 'approved').length;
-        pendingPhotographers = allPhotographers.filter((p) => p.status === 'pending').length;
-        totalLeads = allLeads.length;
-        totalReviews = allReviews.length;
-        premiumPhotographers = allPhotographers.filter((p) => p.plan === 'Premium').length;
-      } catch (dbErr) {
-        console.warn('DB admin metrics fallback');
-      }
+      const allUsers = await db.select().from(users);
+      const allPhotographers = await db.select().from(photographers);
+      const allLeads = await db.select().from(leads);
+      const allReviews = await db.select().from(reviews);
+      const totalUsers = allUsers.length;
+      const totalPhotographers = allPhotographers.length;
+      const approvedPhotographers = allPhotographers.filter((p) => p.status === 'approved').length;
+      const pendingPhotographers = allPhotographers.filter((p) => p.status === 'pending').length;
+      const totalLeads = allLeads.length;
+      const totalReviews = allReviews.length;
+      const premiumPhotographers = allPhotographers.filter((p) => p.plan === 'Premium').length;
 
       res.json({
         success: true,
@@ -3693,15 +2893,10 @@ Formate a resposta em tópicos claros com markdown.`;
         const id = Number(req.params.id);
         const { status } = req.body;
 
-        try {
-          await db.update(photographers).set({ status }).where(eq(photographers.id, id));
-          const fetched = await db.select().from(photographers).where(eq(photographers.id, id));
-          if (fetched.length > 0) return res.json({ success: true, photographer: fetched[0] });
-        } catch (dbErr) {
-          console.warn('DB admin status update fallback');
-        }
-
-        res.json({ success: true, photographer: { id, status } });
+        await db.update(photographers).set({ status }).where(eq(photographers.id, id));
+        const fetched = await db.select().from(photographers).where(eq(photographers.id, id));
+        if (!fetched.length) return res.status(404).json({ success: false, error: 'Fotógrafo não encontrado.' });
+        return res.json({ success: true, photographer: fetched[0] });
       } catch (err: any) {
         res.status(500).json({ success: false, error: err?.message });
       }

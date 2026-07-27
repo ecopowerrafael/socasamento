@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import { BRAZIL_STATES } from '../data/mockData';
 import { MapPin, ChevronRight, Loader2 } from 'lucide-react';
 
 interface NavCity {
@@ -27,6 +26,7 @@ export const BrazilMapStateBrowser: React.FC<BrazilMapStateBrowserProps> = ({ on
   const [navStates, setNavStates] = useState<NavState[]>([]);
   const [selectedState, setSelectedState] = useState<NavState | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
   useEffect(() => {
     let isMounted = true;
@@ -35,48 +35,14 @@ export const BrazilMapStateBrowser: React.FC<BrazilMapStateBrowserProps> = ({ on
         const res = await fetch('/api/navigation/locations');
         const data = await res.json();
 
-        if (data.success && Array.isArray(data.states) && data.states.length > 0) {
-          if (isMounted) {
-            setNavStates(data.states);
-            setSelectedState(data.states[0]);
-          }
-        } else {
-          // Fallback to BRAZIL_STATES
-          const fallback = BRAZIL_STATES.map((st, idx) => ({
-            id: idx + 1,
-            name: st.name,
-            uf: st.uf,
-            slug: st.uf.toLowerCase(),
-            photographersCount: st.photographersCount,
-            cities: st.topCities.map((cName, cIdx) => ({
-              id: cIdx + 1,
-              name: cName,
-              slug: `fotografo-casamento-${cName.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-')}`,
-            })),
-          }));
-          if (isMounted) {
-            setNavStates(fallback);
-            setSelectedState(fallback[0]);
-          }
+        if (!res.ok || !data.success) throw new Error(data.error || 'Não foi possível consultar as localidades.');
+        const states = Array.isArray(data.states) ? data.states : [];
+        if (isMounted) {
+          setNavStates(states);
+          setSelectedState(states[0] || null);
         }
       } catch (err) {
-        console.warn('Navigation locations API offline, using static states', err);
-        const fallback = BRAZIL_STATES.map((st, idx) => ({
-          id: idx + 1,
-          name: st.name,
-          uf: st.uf,
-          slug: st.uf.toLowerCase(),
-          photographersCount: st.photographersCount,
-          cities: st.topCities.map((cName, cIdx) => ({
-            id: cIdx + 1,
-            name: cName,
-            slug: `fotografo-casamento-${cName.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-')}`,
-          })),
-        }));
-        if (isMounted) {
-          setNavStates(fallback);
-          setSelectedState(fallback[0]);
-        }
+        if (isMounted) setError(err instanceof Error ? err.message : 'MySQL indisponível.');
       } finally {
         if (isMounted) setLoading(false);
       }
@@ -106,6 +72,10 @@ export const BrazilMapStateBrowser: React.FC<BrazilMapStateBrowserProps> = ({ on
         <div className="py-12 flex items-center justify-center gap-2 text-[#5A4035]">
           <Loader2 className="w-5 h-5 animate-spin text-[#C88E9B]" />
           <span className="text-xs font-semibold">Carregando mapa de localidades do banco de dados...</span>
+        </div>
+      ) : error ? (
+        <div className="py-10 text-center text-sm text-red-700 bg-red-50 rounded-2xl">
+          {error} Os dados não foram substituídos por exemplos locais.
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">

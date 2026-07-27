@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { UserCheck, MessageSquare, Eye, Phone, DollarSign, ShieldCheck, Check, Sparkles, Filter, Edit3, Image as ImageIcon, Plus, Trash2, ArrowLeft, ArrowRight, Star, Upload, MoveLeft, MoveRight, LogOut } from 'lucide-react';
+import { UserCheck, MessageSquare, Eye, Phone, DollarSign, ShieldCheck, Check, Sparkles, Filter, Edit3, Image as ImageIcon, Plus, Trash2, ArrowLeft, ArrowRight, Star, Upload, MoveLeft, MoveRight, LogOut, CreditCard } from 'lucide-react';
 import { Photographer, PhotoItem } from '../types';
+import { PhotographerSubscriptionTab } from './PhotographerSubscriptionTab';
 
 interface PhotographerPanelProps {
   photographer: Photographer;
@@ -13,7 +14,7 @@ export const PhotographerPanel: React.FC<PhotographerPanelProps> = ({
   onUpdatePhotographer,
   onLogout,
 }) => {
-  const [activeTab, setActiveTab] = useState<'leads' | 'edit-profile' | 'stats'>('leads');
+  const [activeTab, setActiveTab] = useState<'leads' | 'edit-profile' | 'subscription' | 'stats'>('leads');
   const [leadsList, setLeadsList] = useState<any[]>([]);
   const [loadingLeads, setLoadingLeads] = useState(true);
 
@@ -22,21 +23,12 @@ export const PhotographerPanel: React.FC<PhotographerPanelProps> = ({
   const [editStartingPrice, setEditStartingPrice] = useState(photographer.priceStartingFrom);
   const [editPhone, setEditPhone] = useState(photographer.phone);
 
-  // Edit Work Photos / Gallery mockup state
+  // Edit Work Photos / Gallery state backed by MySQL
   const [galleryList, setGalleryList] = useState<PhotoItem[]>(photographer.gallery || []);
   const [newPhotoUrl, setNewPhotoUrl] = useState('');
   const [newPhotoCaption, setNewPhotoCaption] = useState('');
   const [newPhotoCategory, setNewPhotoCategory] = useState<'Cerimônia' | 'Making Of' | 'Pré Wedding' | 'Festa' | 'Drone' | 'Álbuns'>('Cerimônia');
   const [newPhotoFeatured, setNewPhotoFeatured] = useState(false);
-
-  // Preset sample wedding photo URLs for mockup
-  const presetPhotos = [
-    { url: 'https://images.unsplash.com/photo-1519741497674-611481863552?auto=format&fit=crop&w=1200&q=80', caption: 'Cerimônia ao ar livre na fazenda', category: 'Cerimônia' },
-    { url: 'https://images.unsplash.com/photo-1511285560929-80b456fea0bc?auto=format&fit=crop&w=1200&q=80', caption: 'Ensaio Pré Wedding romantico', category: 'Pré Wedding' },
-    { url: 'https://images.unsplash.com/photo-1583939003579-730e3918a45a?auto=format&fit=crop&w=1200&q=80', caption: 'Making Of e maquiagem da noiva', category: 'Making Of' },
-    { url: 'https://images.unsplash.com/photo-1532712938310-34cb3982ef74?auto=format&fit=crop&w=1200&q=80', caption: 'Primeira dança com fogos e luzes', category: 'Festa' },
-    { url: 'https://images.unsplash.com/photo-1606800052052-a08af7148866?auto=format&fit=crop&w=1200&q=80', caption: 'Drone vista aérea da cerimônia', category: 'Drone' },
-  ];
 
   useEffect(() => {
     fetch('/api/leads?photographerId=' + photographer.id)
@@ -50,43 +42,92 @@ export const PhotographerPanel: React.FC<PhotographerPanelProps> = ({
       .catch(() => setLoadingLeads(false));
   }, [photographer.id]);
 
-  const updateLeadStatus = (leadId: string, newStatus: string) => {
-    setLeadsList((prev) =>
-      prev.map((l) => (l.id === leadId ? { ...l, status: newStatus } : l))
+  // Dynamic plan permissions logic
+  const isPremiumPlan = photographer.plan === 'Premium';
+  const monthlyLeadsLimit = isPremiumPlan ? -1 : 5; // Default free limit: 5 leads/month
+  const respondedLeadsCount = leadsList.filter((l) => l.status !== 'Novo').length;
+  const isLimitReached = !isPremiumPlan && monthlyLeadsLimit > 0 && respondedLeadsCount >= monthlyLeadsLimit;
+
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
+
+  const updateLeadStatus = async (leadId: string, newStatus: string) => {
+    // Check limit if trying to transition from Novo to something else
+    const targetLead = leadsList.find((l) => l.id === leadId);
+    if (!isPremiumPlan && isLimitReached && targetLead?.status === 'Novo' && newStatus !== 'Novo') {
+      setShowUpgradeModal(true);
+      return;
+    }
+
+    const response = await fetch(`/api/leads/${leadId}/status`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: newStatus }),
+    });
+    const result = await response.json();
+    if (!response.ok || result.success === false) {
+      alert(result.error || 'Não foi possível atualizar o orçamento.');
+      return;
+    }
+    setLeadsList((previous) =>
+      previous.map((lead) => String(lead.id) === String(leadId) ? result.lead : lead)
     );
   };
 
-  const handleAddPhoto = (e: React.FormEvent) => {
+  const handleAddPhoto = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newPhotoUrl.trim()) return;
 
-    const newItem: PhotoItem = {
-      id: 'g_' + Date.now(),
-      url: newPhotoUrl.trim(),
-      caption: newPhotoCaption.trim() || 'Foto de Casamento',
-      category: newPhotoCategory,
-      featured: newPhotoFeatured
-    };
-
-    setGalleryList((prev) => [newItem, ...prev]);
+    const response = await fetch(`/api/photographers/${photographer.id}/gallery`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        url: newPhotoUrl.trim(),
+        caption: newPhotoCaption.trim() || 'Foto de Casamento',
+        category: newPhotoCategory,
+        featured: newPhotoFeatured,
+        sortOrder: 0,
+      }),
+    });
+    const result = await response.json();
+    if (!response.ok || result.success === false) {
+      alert(result.error || 'Não foi possível adicionar a foto.');
+      return;
+    }
+    setGalleryList((previous) => [{ ...result.media, id: String(result.media.id) }, ...previous]);
     setNewPhotoUrl('');
     setNewPhotoCaption('');
     setNewPhotoFeatured(false);
   };
 
-  const handleRemovePhoto = (id: string) => {
-    setGalleryList((prev) => prev.filter((item) => item.id !== id));
+  const handleRemovePhoto = async (id: string) => {
+    const response = await fetch(`/api/photographers/media/${id}`, { method: 'DELETE' });
+    const result = await response.json();
+    if (!response.ok || result.success === false) {
+      alert(result.error || 'Não foi possível excluir a foto.');
+      return;
+    }
+    setGalleryList((previous) => previous.filter((item) => item.id !== id));
   };
 
-  const handleToggleFeaturedPhoto = (id: string) => {
-    setGalleryList((prev) =>
-      prev.map((item) =>
-        item.id === id ? { ...item, featured: !item.featured } : item
-      )
+  const handleToggleFeaturedPhoto = async (id: string) => {
+    const current = galleryList.find((item) => item.id === id);
+    if (!current) return;
+    const response = await fetch(`/api/photographers/media/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ featured: !current.featured }),
+    });
+    const result = await response.json();
+    if (!response.ok || result.success === false) {
+      alert(result.error || 'Não foi possível atualizar a foto.');
+      return;
+    }
+    setGalleryList((previous) =>
+      previous.map((item) => item.id === id ? { ...item, featured: Boolean(result.media.featured) } : item)
     );
   };
 
-  const handleMovePhoto = (index: number, direction: 'up' | 'down') => {
+  const handleMovePhoto = async (index: number, direction: 'up' | 'down') => {
     const targetIndex = direction === 'up' ? index - 1 : index + 1;
     if (targetIndex < 0 || targetIndex >= galleryList.length) return;
     const newArr = [...galleryList];
@@ -94,9 +135,18 @@ export const PhotographerPanel: React.FC<PhotographerPanelProps> = ({
     newArr[index] = newArr[targetIndex];
     newArr[targetIndex] = temp;
     setGalleryList(newArr);
+    await Promise.all(
+      newArr.map((item, sortOrder) =>
+        fetch(`/api/photographers/media/${item.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sortOrder }),
+        })
+      )
+    );
   };
 
-  const handleSaveProfile = (e: React.FormEvent) => {
+  const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
     const updated: Photographer = {
       ...photographer,
@@ -105,7 +155,17 @@ export const PhotographerPanel: React.FC<PhotographerPanelProps> = ({
       phone: editPhone,
       gallery: galleryList
     };
-    onUpdatePhotographer(updated);
+    const response = await fetch('/api/photographers', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updated),
+    });
+    const result = await response.json();
+    if (!response.ok || result.success === false) {
+      alert(result.error || 'Não foi possível salvar o perfil.');
+      return;
+    }
+    onUpdatePhotographer({ ...updated, ...result.photographer, gallery: galleryList });
     alert('Perfil e galeria de trabalhos atualizados com sucesso no portal!');
   };
 
@@ -146,6 +206,16 @@ export const PhotographerPanel: React.FC<PhotographerPanelProps> = ({
             Editar Perfil
           </button>
 
+          <button
+            onClick={() => setActiveTab('subscription')}
+            className={`px-4 py-2 rounded-xl font-bold transition-all flex items-center gap-1.5 ${
+              activeTab === 'subscription' ? 'bg-[#C88E9B] text-white shadow-sm' : 'text-white/80 hover:text-white'
+            }`}
+          >
+            <CreditCard className="w-3.5 h-3.5" />
+            <span>Minha Assinatura</span>
+          </button>
+
           {onLogout && (
             <>
               <div className="h-6 w-px bg-white/20 my-auto" />
@@ -165,15 +235,15 @@ export const PhotographerPanel: React.FC<PhotographerPanelProps> = ({
       {/* Metrics Row */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
         <div className="bg-white p-5 rounded-2xl border border-[#C88E9B]/20 shadow-xs">
-          <span className="text-xs font-bold text-[#5A4035]/60 uppercase block">Visualizações no Mês</span>
-          <span className="text-2xl font-serif font-bold text-[#5A4035]">1.420</span>
-          <span className="text-[10px] text-emerald-600 font-semibold block mt-1">↑ +18% em relação ao mês anterior</span>
+          <span className="text-xs font-bold text-[#5A4035]/60 uppercase block">Avaliações publicadas</span>
+          <span className="text-2xl font-serif font-bold text-[#5A4035]">{photographer.reviewCount || 0}</span>
+          <span className="text-[10px] text-emerald-600 font-semibold block mt-1">Dados atuais do perfil</span>
         </div>
 
         <div className="bg-white p-5 rounded-2xl border border-[#C88E9B]/20 shadow-xs">
           <span className="text-xs font-bold text-[#5A4035]/60 uppercase block">Cliques no WhatsApp</span>
-          <span className="text-2xl font-serif font-bold text-[#5A4035]">84</span>
-          <span className="text-[10px] text-emerald-600 font-semibold block mt-1">↑ Altamente qualificados</span>
+          <span className="text-2xl font-serif font-bold text-[#5A4035]">{(photographer as any).whatsappClicks || 0}</span>
+          <span className="text-[10px] text-emerald-600 font-semibold block mt-1">Cliques registrados no portal</span>
         </div>
 
         <div className="bg-white p-5 rounded-2xl border border-[#C88E9B]/20 shadow-xs">
@@ -197,65 +267,138 @@ export const PhotographerPanel: React.FC<PhotographerPanelProps> = ({
           <div className="flex items-center justify-between border-b border-[#C88E9B]/20 pb-4">
             <div>
               <h2 className="text-xl font-serif font-bold text-[#5A4035]">CRM de Oportunidades & Leads Recebidos</h2>
-              <p className="text-xs text-[#5A4035]/70">Responda diretamente aos noivos via WhatsApp ou Email</p>
+              <p className="text-xs text-[#5A4035]/70">
+                Plano Atual: <strong className="uppercase text-[#C88E9B]">{photographer.plan}</strong>
+                {!isPremiumPlan && (
+                  <span> • Respostas este mês: <strong>{respondedLeadsCount} / {monthlyLeadsLimit}</strong></span>
+                )}
+              </p>
             </div>
             <span className="text-xs font-bold text-[#5A4035] bg-[#FAF5F0] px-3 py-1 rounded-full">
               {leadsList.length} Noivos aguardando
             </span>
           </div>
 
-          <div className="space-y-4">
-            {leadsList.map((lead) => (
-              <div key={lead.id} className="bg-[#FAF5F0] p-5 rounded-2xl border border-[#C88E9B]/20 space-y-3">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-[#5A4035]/10 pb-3">
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <h3 className="font-bold text-base text-[#5A4035]">{lead.coupleName}</h3>
-                      <span className="bg-[#5A4035] text-white text-[10px] font-bold px-2 py-0.5 rounded-full">
-                        {lead.status}
-                      </span>
-                    </div>
-                    <p className="text-xs text-[#5A4035]/70">
-                      Data do Casamento: <strong>{lead.weddingDate}</strong> • Cidade: {lead.city} ({lead.estimatedGuests} convidados)
-                    </p>
-                  </div>
-
-                  {/* Status Dropdown */}
-                  <select
-                    value={lead.status}
-                    onChange={(e) => updateLeadStatus(lead.id, e.target.value)}
-                    className="px-3 py-1 bg-white border border-[#5A4035]/20 rounded-xl text-xs font-bold text-[#5A4035]"
-                  >
-                    <option value="Novo">Novo</option>
-                    <option value="Em Atendimento">Em Atendimento</option>
-                    <option value="Proposta Enviada">Proposta Enviada</option>
-                    <option value="Fechado">Fechado 🎉</option>
-                    <option value="Perdido">Perdido</option>
-                  </select>
-                </div>
-
-                <p className="text-xs text-[#5A4035]/90 italic bg-white p-3 rounded-xl border border-[#5A4035]/10">
-                  "{lead.message || 'Solicitação de orçamento enviada pelo portal.'}"
-                </p>
-
-                <div className="flex flex-wrap items-center justify-between gap-3 text-xs pt-1">
-                  <div className="space-x-2 text-[#5A4035]/80">
-                    <span>Teto de Orçamento: <strong>R$ {lead.budgetLimit?.toLocaleString('pt-BR')}</strong></span>
-                    <span>• Serviços: <strong>{Array.isArray(lead.servicesNeeded) ? lead.servicesNeeded.join(', ') : 'Foto'}</strong></span>
-                  </div>
-
-                  <a
-                    href={`https://wa.me/${lead.whatsapp?.replace(/\D/g, '')}?text=Ol%C3%A1%20${encodeURIComponent(lead.coupleName)}!%20Recebi%20sua%20solicita%C3%A7%C3%A3o%20pelo%20S%C3%B3%20Fot%C3%B3grafos%20de%20Casamento.`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="px-4 py-2 bg-[#25D366] text-white font-bold rounded-xl hover:bg-[#1ebd59] flex items-center gap-1.5"
-                  >
-                    <MessageSquare className="w-3.5 h-3.5 fill-white" />
-                    <span>Chamar no WhatsApp</span>
-                  </a>
+          {/* Plan Limit Warning Banner */}
+          {!isPremiumPlan && isLimitReached && (
+            <div className="p-4 bg-amber-50 rounded-2xl border border-amber-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs text-amber-900">
+              <div className="flex items-center gap-3">
+                <Sparkles className="w-6 h-6 text-amber-600 shrink-0" />
+                <div>
+                  <p className="font-bold">Limite de respostas atingido no Plano Gratuito ({monthlyLeadsLimit} leads/mês)</p>
+                  <p className="text-amber-700">Para visualizar os telefones de novos noivos e enviar propostas ilimitadas, faça upgrade para o Plano Premium.</p>
                 </div>
               </div>
-            ))}
+              <button
+                onClick={() => setShowUpgradeModal(true)}
+                className="px-4 py-2 bg-[#C88E9B] text-white font-bold rounded-xl hover:bg-[#b07582] shrink-0 transition-all shadow-xs"
+              >
+                Ativar Plano Premium
+              </button>
+            </div>
+          )}
+
+          <div className="space-y-4">
+            {leadsList.map((lead) => {
+              const isLockedForFree = !isPremiumPlan && isLimitReached && lead.status === 'Novo';
+
+              return (
+                <div key={lead.id} className="bg-[#FAF5F0] p-5 rounded-2xl border border-[#C88E9B]/20 space-y-3">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-[#5A4035]/10 pb-3">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h3 className="font-bold text-base text-[#5A4035]">{lead.coupleName}</h3>
+                        <span className="bg-[#5A4035] text-white text-[10px] font-bold px-2 py-0.5 rounded-full">
+                          {lead.status}
+                        </span>
+                      </div>
+                      <p className="text-xs text-[#5A4035]/70">
+                        Data do Casamento: <strong>{lead.weddingDate}</strong> • Cidade: {lead.city} ({lead.estimatedGuests} convidados)
+                      </p>
+                    </div>
+
+                    {/* Status Dropdown */}
+                    <select
+                      value={lead.status}
+                      onChange={(e) => updateLeadStatus(lead.id, e.target.value)}
+                      className="px-3 py-1 bg-white border border-[#5A4035]/20 rounded-xl text-xs font-bold text-[#5A4035]"
+                    >
+                      <option value="Novo">Novo</option>
+                      <option value="Em Atendimento">Em Atendimento</option>
+                      <option value="Proposta Enviada">Proposta Enviada</option>
+                      <option value="Fechado">Fechado 🎉</option>
+                      <option value="Perdido">Perdido</option>
+                    </select>
+                  </div>
+
+                  <p className="text-xs text-[#5A4035]/90 italic bg-white p-3 rounded-xl border border-[#5A4035]/10">
+                    "{lead.message || 'Solicitação de orçamento enviada pelo portal.'}"
+                  </p>
+
+                  <div className="flex flex-wrap items-center justify-between gap-3 text-xs pt-1">
+                    <div className="space-x-2 text-[#5A4035]/80">
+                      <span>Teto de Orçamento: <strong>R$ {lead.budgetLimit?.toLocaleString('pt-BR')}</strong></span>
+                      <span>• Serviços: <strong>{Array.isArray(lead.servicesNeeded) ? lead.servicesNeeded.join(', ') : 'Foto'}</strong></span>
+                    </div>
+
+                    {isLockedForFree ? (
+                      <button
+                        onClick={() => setShowUpgradeModal(true)}
+                        className="px-4 py-2 bg-stone-300 text-stone-700 font-bold rounded-xl hover:bg-stone-400 flex items-center gap-1.5 transition-all"
+                      >
+                        <ShieldCheck className="w-3.5 h-3.5 text-amber-600" />
+                        <span>Desbloquear WhatsApp (Plano Premium)</span>
+                      </button>
+                    ) : (
+                      <a
+                        href={`https://wa.me/${lead.whatsapp?.replace(/\D/g, '')}?text=Ol%C3%A1%20${encodeURIComponent(lead.coupleName)}!%20Recebi%20sua%20solicita%C3%A7%C3%A3o%20pelo%20S%C3%B3%20Fot%C3%B3grafos%20de%20Casamento.`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="px-4 py-2 bg-[#25D366] text-white font-bold rounded-xl hover:bg-[#1ebd59] flex items-center gap-1.5"
+                      >
+                        <MessageSquare className="w-3.5 h-3.5 fill-white" />
+                        <span>Chamar no WhatsApp</span>
+                      </a>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Upgrade Modal Banner */}
+      {showUpgradeModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-md w-full shadow-2xl border border-rose-100 space-y-5 text-center">
+            <div className="w-14 h-14 bg-rose-50 text-[#C88E9B] rounded-2xl flex items-center justify-center mx-auto">
+              <Sparkles className="w-8 h-8" />
+            </div>
+            <h3 className="text-xl font-serif font-bold text-[#5A4035]">Desbloqueie Contatos Ilimitados</h3>
+            <p className="text-xs text-stone-600">
+              No Plano Gratuito, você atingiu o limite de {monthlyLeadsLimit} respostas de noivos este mês.
+              Faça upgrade para o <strong>Plano Premium</strong> para liberar o número direto do WhatsApp, destaque nas buscas locais e galeria de fotos ilimitada!
+            </p>
+            <div className="p-4 bg-[#FAF5F0] rounded-2xl border border-[#C88E9B]/20 text-xs font-bold text-[#5A4035] space-y-1 text-left">
+              <p className="text-[#C88E9B]">✓ Respostas Ilimitadas a Noivos</p>
+              <p className="text-[#C88E9B]">✓ Botão Direto de WhatsApp no Perfil</p>
+              <p className="text-[#C88E9B]">✓ Destaque com Selo Verificado em Topo de Busca</p>
+            </div>
+            <div className="flex items-center justify-center gap-3 pt-2">
+              <button
+                onClick={() => setShowUpgradeModal(false)}
+                className="px-4 py-2.5 text-stone-500 hover:text-stone-700 font-medium text-xs"
+              >
+                Voltar
+              </button>
+              <a
+                href="/planos"
+                className="px-6 py-2.5 bg-[#C88E9B] hover:bg-[#b07582] text-white font-bold text-xs rounded-xl transition-all shadow-md"
+              >
+                Conhecer Planos Premium
+              </a>
+            </div>
           </div>
         </div>
       )}
@@ -315,13 +458,13 @@ export const PhotographerPanel: React.FC<PhotographerPanelProps> = ({
             </form>
           </div>
 
-          {/* WORK PHOTOS GALLERY MANAGEMENT MOCKUP */}
+          {/* WORK PHOTOS GALLERY MANAGEMENT */}
           <div className="bg-white rounded-3xl p-6 sm:p-8 border border-[#C88E9B]/20 shadow-sm space-y-6">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#C88E9B]/20 pb-4">
               <div>
                 <div className="inline-flex items-center gap-1 text-xs font-bold text-[#C88E9B] uppercase tracking-wider mb-1">
                   <ImageIcon className="w-4 h-4 text-[#C7A86A]" />
-                  <span>Gerenciador de Portfólio (Mockup)</span>
+                  <span>Gerenciador de Portfólio</span>
                 </div>
                 <h2 className="text-xl font-serif font-bold text-[#5A4035]">
                   Editar Fotos dos Trabalhos e Galeria
@@ -385,7 +528,6 @@ export const PhotographerPanel: React.FC<PhotographerPanelProps> = ({
                 </div>
               </div>
 
-              {/* Quick Presets for Easy Mockup Testing */}
               <div className="flex flex-wrap items-center justify-between gap-3 text-xs pt-2 border-t border-[#5A4035]/10">
                 <div className="flex items-center gap-2">
                   <label className="flex items-center gap-1.5 cursor-pointer font-bold text-[#5A4035]">
@@ -410,26 +552,6 @@ export const PhotographerPanel: React.FC<PhotographerPanelProps> = ({
                 </div>
               </div>
 
-              {/* Quick Preset Buttons */}
-              <div className="pt-2">
-                <span className="text-[11px] font-bold text-[#5A4035]/70 block mb-1">Ou clique para adicionar foto modelo de teste:</span>
-                <div className="flex flex-wrap gap-1.5">
-                  {presetPhotos.map((preset, idx) => (
-                    <button
-                      key={idx}
-                      type="button"
-                      onClick={() => {
-                        setNewPhotoUrl(preset.url);
-                        setNewPhotoCaption(preset.caption);
-                        setNewPhotoCategory(preset.category as any);
-                      }}
-                      className="px-2.5 py-1 bg-white border border-[#C88E9B]/30 hover:border-[#C88E9B] text-[10px] font-semibold text-[#5A4035] rounded-lg transition-colors"
-                    >
-                      + {preset.category}: {preset.caption}
-                    </button>
-                  ))}
-                </div>
-              </div>
             </form>
 
             {/* Existing Photos Grid */}
@@ -535,6 +657,14 @@ export const PhotographerPanel: React.FC<PhotographerPanelProps> = ({
           </div>
 
         </div>
+      )}
+
+      {/* Tab Content: Minha Assinatura */}
+      {activeTab === 'subscription' && (
+        <PhotographerSubscriptionTab
+          photographer={photographer}
+          onUpdatePhotographer={onUpdatePhotographer}
+        />
       )}
 
     </div>

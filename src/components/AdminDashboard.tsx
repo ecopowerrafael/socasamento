@@ -1,17 +1,19 @@
-import React, { useState } from 'react';
-import { ShieldCheck, Users, Building2, DollarSign, Sparkles, Check, X, Search, Edit, Calendar, AlertTriangle, FileText, Plus, Trash2, Clock, MessageSquare, RefreshCw, Eye, Tag, MapPin, FolderPlus, LogOut } from 'lucide-react';
-import { BRAZIL_STATES, BLOG_ARTICLES } from '../data/mockData';
+import React, { useEffect, useState } from 'react';
+import { ShieldCheck, Users, Building2, DollarSign, Sparkles, Check, X, Search, Edit, Calendar, AlertTriangle, FileText, Plus, Trash2, Clock, MessageSquare, RefreshCw, Eye, Tag, MapPin, FolderPlus, LogOut, BellRing } from 'lucide-react';
 import { Photographer, BlogArticle } from '../types';
 import { AdminCategoriesManager } from './admin/AdminCategoriesManager';
 import { AdminLocationsManager } from './admin/AdminLocationsManager';
 import { AdminPlansManager } from './admin/AdminPlansManager';
 import { AdminInspirationsManager } from './admin/AdminInspirationsManager';
+import { AdminSubscriptionsManager } from './admin/AdminSubscriptionsManager';
+import { AdminMercadoPagoSettings } from './admin/AdminMercadoPagoSettings';
+import { AdminCommunicationManager } from './admin/AdminCommunicationManager';
 
 interface AdminDashboardProps {
   photographers: Photographer[];
   onToggleBadge: (photographerId: string, badge: 'Verificado' | 'Top Avaliado' | 'Premium') => void;
   onUpdatePhotographer?: (updated: Photographer) => void;
-  initialTab?: 'plans' | 'subscriptions' | 'studios' | 'blog' | 'overview' | 'categories' | 'locations' | 'inspirations';
+  initialTab?: 'plans' | 'subscriptions' | 'mercadopago' | 'communication' | 'studios' | 'blog' | 'overview' | 'categories' | 'locations' | 'inspirations';
   onLogout?: () => void;
 }
 
@@ -22,15 +24,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   initialTab = 'plans',
   onLogout,
 }) => {
-  const [activeTab, setActiveTab] = useState<'plans' | 'subscriptions' | 'studios' | 'blog' | 'overview' | 'categories' | 'locations' | 'inspirations'>(initialTab);
-  const [subscriptionFilter, setSubscriptionFilter] = useState<'all' | 'active' | 'expiring' | 'expired'>('all');
+  const [activeTab, setActiveTab] = useState<'plans' | 'subscriptions' | 'mercadopago' | 'communication' | 'studios' | 'blog' | 'overview' | 'categories' | 'locations' | 'inspirations'>(initialTab);
   const [searchFilter, setSearchFilter] = useState('');
 
   // Editing studio modal state
   const [editingStudio, setEditingStudio] = useState<Photographer | null>(null);
 
   // Blog posts management state
-  const [blogPosts, setBlogPosts] = useState<BlogArticle[]>(BLOG_ARTICLES);
+  const [blogPosts, setBlogPosts] = useState<BlogArticle[]>([]);
+  const [statesCatalog, setStatesCatalog] = useState<any[]>([]);
+  const [adminMetrics, setAdminMetrics] = useState<any>({});
+  const [subscriptionMetrics, setSubscriptionMetrics] = useState<any>({});
   const [isBlogModalOpen, setIsBlogModalOpen] = useState(false);
   const [editingBlogPost, setEditingBlogPost] = useState<BlogArticle | null>(null);
 
@@ -43,33 +47,33 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [blogImage, setBlogImage] = useState('');
   const [blogReadTime, setBlogReadTime] = useState('5 min de leitura');
 
-  // Simulated subscription mock metadata for photographers
-  const getSubscriptionInfo = (index: number) => {
-    if (index === 0) return { status: 'Ativa' as const, daysLeft: 180, expirationDate: '20/01/2027', price: 189 };
-    if (index === 1) return { status: 'Preste a Vencer' as const, daysLeft: 5, expirationDate: '28/07/2026', price: 189 };
-    if (index === 2) return { status: 'Ativa' as const, daysLeft: 90, expirationDate: '23/10/2026', price: 99 };
-    if (index === 3) return { status: 'Preste a Vencer' as const, daysLeft: 8, expirationDate: '31/07/2026', price: 189 };
-    if (index === 4) return { status: 'Vencida' as const, daysLeft: -12, expirationDate: '11/07/2026', price: 0 };
-    return { status: 'Ativa' as const, daysLeft: 120, expirationDate: '20/11/2026', price: 99 };
-  };
-
-  const photographersWithSubs = photographers.map((p, i) => ({
-    ...p,
-    sub: getSubscriptionInfo(i),
-  }));
-
-  const filteredPhotographers = photographersWithSubs.filter((p) =>
+  const filteredPhotographers = photographers.filter((p) =>
     p.studioName.toLowerCase().includes(searchFilter.toLowerCase()) ||
     p.name.toLowerCase().includes(searchFilter.toLowerCase()) ||
     p.city.toLowerCase().includes(searchFilter.toLowerCase())
   );
 
-  const filteredSubscriptions = filteredPhotographers.filter((p) => {
-    if (subscriptionFilter === 'active') return p.sub.status === 'Ativa';
-    if (subscriptionFilter === 'expiring') return p.sub.status === 'Preste a Vencer';
-    if (subscriptionFilter === 'expired') return p.sub.status === 'Vencida';
-    return true;
-  });
+  useEffect(() => {
+    Promise.all([
+      fetch('/api/blog').then((response) => response.json()),
+      fetch('/api/states').then((response) => response.json()),
+      fetch('/api/admin/metrics').then((response) => response.json()),
+      fetch('/api/admin/subscriptions?limit=1').then((response) => response.json()),
+    ])
+      .then(([blogData, statesData, metricsData, subscriptionsData]) => {
+        setBlogPosts(
+          (blogData.articles || []).map((article: any) => ({
+            ...article,
+            id: String(article.id),
+            seoKeywords: Array.isArray(article.seoKeywords) ? article.seoKeywords : [],
+          }))
+        );
+        setStatesCatalog(statesData.states || []);
+        setAdminMetrics(metricsData.metrics || {});
+        setSubscriptionMetrics(subscriptionsData.metrics || {});
+      })
+      .catch((error) => console.error('Erro ao carregar painel administrativo do MySQL:', error));
+  }, []);
 
   // Studio Edit Handler
   const handleSaveStudioEdit = (e: React.FormEvent) => {
@@ -110,52 +114,55 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   };
 
   // Blog Save Handler
-  const handleSaveBlogPost = (e: React.FormEvent) => {
+  const handleSaveBlogPost = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!blogTitle.trim()) return;
 
-    if (editingBlogPost) {
-      setBlogPosts((prev) =>
-        prev.map((art) =>
-          art.id === editingBlogPost.id
-            ? {
-                ...art,
-                title: blogTitle,
-                category: blogCategory,
-                author: blogAuthor,
-                excerpt: blogExcerpt,
-                content: blogContent,
-                image: blogImage || art.image,
-                readTime: blogReadTime,
-              }
-            : art
-        )
-      );
-      alert('Artigo atualizado com sucesso!');
-    } else {
-      const newArt: BlogArticle = {
-        id: 'b_' + Date.now(),
-        slug: blogTitle.toLowerCase().replace(/\s+/g, '-').replace(/[^\w-]/g, ''),
+    try {
+      const payload = {
         title: blogTitle,
         category: blogCategory,
         author: blogAuthor,
-        date: '23 de Julho de 2026',
+        date: new Date().toLocaleDateString('pt-BR'),
         excerpt: blogExcerpt || 'Artigo informativo sobre fotografia de casamento.',
         content: blogContent || 'Conteúdo do artigo...',
-        image: blogImage || 'https://images.unsplash.com/photo-1519741497674-611481863552?auto=format&fit=crop&w=800&q=80',
+        image: blogImage,
         readTime: blogReadTime || '4 min de leitura',
         seoKeywords: ['casamento', 'fotografia'],
       };
-      setBlogPosts((prev) => [newArt, ...prev]);
-      alert('Novo artigo publicado no blog do portal!');
+      const response = await fetch(
+        editingBlogPost ? `/api/admin/blog/${editingBlogPost.id}` : '/api/admin/blog',
+        {
+          method: editingBlogPost ? 'PUT' : 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        }
+      );
+      const result = await response.json();
+      if (!response.ok || result.success === false) throw new Error(result.error || 'Erro ao salvar artigo.');
+      const saved = { ...result.article, id: String(result.article.id) } as BlogArticle;
+      setBlogPosts((previous) =>
+        editingBlogPost
+          ? previous.map((article) => article.id === editingBlogPost.id ? saved : article)
+          : [saved, ...previous]
+      );
+      setIsBlogModalOpen(false);
+      alert(editingBlogPost ? 'Artigo atualizado com sucesso!' : 'Novo artigo publicado no blog do portal!');
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'Erro ao salvar artigo.');
     }
-    setIsBlogModalOpen(false);
   };
 
   // Blog Delete Handler
-  const handleDeleteBlogPost = (id: string) => {
+  const handleDeleteBlogPost = async (id: string) => {
     if (confirm('Tem certeza de que deseja excluir este artigo do blog?')) {
-      setBlogPosts((prev) => prev.filter((art) => art.id !== id));
+      const response = await fetch(`/api/admin/blog/${id}`, { method: 'DELETE' });
+      const result = await response.json();
+      if (!response.ok || result.success === false) {
+        alert(result.error || 'Erro ao excluir artigo.');
+        return;
+      }
+      setBlogPosts((previous) => previous.filter((article) => article.id !== id));
     }
   };
 
@@ -196,6 +203,25 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             }`}
           >
             Assinaturas
+          </button>
+
+          <button
+            onClick={() => setActiveTab('mercadopago')}
+            className={`px-3.5 py-2 rounded-xl font-bold transition-all flex items-center gap-1.5 ${
+              activeTab === 'mercadopago' ? 'bg-[#C88E9B] text-white' : 'text-white/80 hover:text-white'
+            }`}
+          >
+            <DollarSign className="w-3.5 h-3.5" />
+            <span>Mercado Pago</span>
+          </button>
+          <button
+            onClick={() => setActiveTab('communication')}
+            className={`px-3.5 py-2 rounded-xl font-bold transition-all flex items-center gap-1.5 ${
+              activeTab === 'communication' ? 'bg-[#C88E9B] text-white' : 'text-white/80 hover:text-white'
+            }`}
+          >
+            <BellRing className="w-3.5 h-3.5" />
+            <span>Comunicação</span>
           </button>
           <button
             onClick={() => setActiveTab('studios')}
@@ -274,25 +300,27 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
         <div className="bg-white p-5 rounded-2xl border border-[#C88E9B]/20 shadow-xs">
           <span className="text-xs font-bold text-[#5A4035]/60 uppercase block">Receita Recorrente (MRR)</span>
-          <span className="text-2xl font-serif font-bold text-[#C7A86A]">R$ 184.500</span>
+          <span className="text-2xl font-serif font-bold text-[#C7A86A]">
+            R$ {Number(subscriptionMetrics.mrr || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+          </span>
           <span className="text-[10px] text-emerald-600 font-semibold block mt-1">↑ Assinaturas Ativas no Portal</span>
         </div>
 
         <div className="bg-white p-5 rounded-2xl border border-[#C88E9B]/20 shadow-xs">
           <span className="text-xs font-bold text-[#5A4035]/60 uppercase block">Assinaturas Ativas</span>
-          <span className="text-2xl font-serif font-bold text-[#5A4035]">7.240</span>
+          <span className="text-2xl font-serif font-bold text-[#5A4035]">{subscriptionMetrics.totalActive || 0}</span>
           <span className="text-[10px] text-emerald-600 font-semibold block mt-1">Planos Destaque & Premium</span>
         </div>
 
         <div className="bg-white p-5 rounded-2xl border border-[#C88E9B]/20 shadow-xs">
           <span className="text-xs font-bold text-[#5A4035]/60 uppercase block">Prestes a Vencer</span>
-          <span className="text-2xl font-serif font-bold text-amber-600">342</span>
-          <span className="text-[10px] text-amber-600 font-semibold block mt-1">Vencem nos próximos 15 dias</span>
+          <span className="text-2xl font-serif font-bold text-amber-600">{subscriptionMetrics.totalExpiringIn7Days || 0}</span>
+          <span className="text-[10px] text-amber-600 font-semibold block mt-1">Vencem nos próximos 7 dias</span>
         </div>
 
         <div className="bg-white p-5 rounded-2xl border border-[#C88E9B]/20 shadow-xs">
           <span className="text-xs font-bold text-[#5A4035]/60 uppercase block">Assinaturas Vencidas</span>
-          <span className="text-2xl font-serif font-bold text-rose-600">128</span>
+          <span className="text-2xl font-serif font-bold text-rose-600">{subscriptionMetrics.totalCancelled || 0}</span>
           <span className="text-[10px] text-rose-600 font-semibold block mt-1">Aguardando renovação</span>
         </div>
       </div>
@@ -310,130 +338,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       {activeTab === 'inspirations' && <AdminInspirationsManager />}
 
       {/* TAB 1: GESTÃO DE ASSINATURAS */}
-      {activeTab === 'subscriptions' && (
-        <div className="bg-white rounded-3xl p-6 sm:p-8 border border-[#C88E9B]/20 shadow-sm space-y-6">
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4 border-b border-[#C88E9B]/20 pb-4">
-            <div>
-              <h2 className="text-xl font-serif font-bold text-[#5A4035]">Gestão Financeira de Assinaturas</h2>
-              <p className="text-xs text-[#5A4035]/70">Controle de renovações, avisos de vencimento e cobranças dos estúdios</p>
-            </div>
+      {activeTab === 'subscriptions' && <AdminSubscriptionsManager />}
 
-            {/* Subscription Filter Buttons */}
-            <div className="flex items-center gap-1.5 bg-[#FAF5F0] p-1 rounded-xl border border-[#C88E9B]/20 text-xs">
-              <button
-                onClick={() => setSubscriptionFilter('all')}
-                className={`px-3 py-1.5 rounded-lg font-bold transition-colors ${
-                  subscriptionFilter === 'all' ? 'bg-[#5A4035] text-white' : 'text-[#5A4035]/70 hover:text-[#5A4035]'
-                }`}
-              >
-                Todas ({filteredPhotographers.length})
-              </button>
-              <button
-                onClick={() => setSubscriptionFilter('active')}
-                className={`px-3 py-1.5 rounded-lg font-bold transition-colors ${
-                  subscriptionFilter === 'active' ? 'bg-emerald-600 text-white' : 'text-[#5A4035]/70 hover:text-[#5A4035]'
-                }`}
-              >
-                Ativas
-              </button>
-              <button
-                onClick={() => setSubscriptionFilter('expiring')}
-                className={`px-3 py-1.5 rounded-lg font-bold transition-colors ${
-                  subscriptionFilter === 'expiring' ? 'bg-amber-500 text-white' : 'text-[#5A4035]/70 hover:text-[#5A4035]'
-                }`}
-              >
-                Preste a Vencer
-              </button>
-              <button
-                onClick={() => setSubscriptionFilter('expired')}
-                className={`px-3 py-1.5 rounded-lg font-bold transition-colors ${
-                  subscriptionFilter === 'expired' ? 'bg-rose-600 text-white' : 'text-[#5A4035]/70 hover:text-[#5A4035]'
-                }`}
-              >
-                Vencidas
-              </button>
-            </div>
-          </div>
-
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs border-collapse">
-              <thead>
-                <tr className="bg-[#FAF5F0] border-b border-[#C88E9B]/20 text-[#5A4035]">
-                  <th className="p-3 font-bold">Estúdio / Fotógrafo</th>
-                  <th className="p-3 font-bold">Plano</th>
-                  <th className="p-3 font-bold">Valor Mensal</th>
-                  <th className="p-3 font-bold">Data de Vencimento</th>
-                  <th className="p-3 font-bold text-center">Status Assinatura</th>
-                  <th className="p-3 font-bold text-center">Ações de Cobrança</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-[#5A4035]/10 text-[#5A4035]">
-                {filteredSubscriptions.map((p) => (
-                  <tr key={p.id} className="hover:bg-[#FAF5F0]/50">
-                    <td className="p-3 flex items-center gap-2">
-                      <img src={p.avatar} alt={p.name} className="w-8 h-8 rounded-lg object-cover" />
-                      <div>
-                        <span className="font-bold block">{p.studioName}</span>
-                        <span className="text-[10px] text-[#5A4035]/60">{p.city} - {p.state} • {p.phone}</span>
-                      </div>
-                    </td>
-                    <td className="p-3">
-                      <span className="bg-[#FAF5F0] border border-[#C88E9B]/30 px-2 py-0.5 rounded font-bold text-[10px]">
-                        {p.plan}
-                      </span>
-                    </td>
-                    <td className="p-3 font-bold text-[#5A4035]">
-                      {p.sub.price > 0 ? `R$ ${p.sub.price}/mês` : 'Gratuito'}
-                    </td>
-                    <td className="p-3 font-semibold text-[#5A4035]/80">
-                      {p.sub.expirationDate}
-                    </td>
-                    <td className="p-3 text-center">
-                      {p.sub.status === 'Ativa' && (
-                        <span className="bg-emerald-100 text-emerald-800 text-[10px] font-bold px-2.5 py-1 rounded-full border border-emerald-300">
-                          ✓ Ativa
-                        </span>
-                      )}
-                      {p.sub.status === 'Preste a Vencer' && (
-                        <span className="bg-amber-100 text-amber-800 text-[10px] font-bold px-2.5 py-1 rounded-full border border-amber-300 flex items-center justify-center gap-1">
-                          <AlertTriangle className="w-3 h-3" />
-                          Preste a Vencer ({p.sub.daysLeft} dias)
-                        </span>
-                      )}
-                      {p.sub.status === 'Vencida' && (
-                        <span className="bg-rose-100 text-rose-800 text-[10px] font-bold px-2.5 py-1 rounded-full border border-rose-300">
-                          ✕ Vencida
-                        </span>
-                      )}
-                    </td>
-                    <td className="p-3 text-center">
-                      <div className="flex items-center justify-center gap-1.5">
-                        <a
-                          href={`https://wa.me/${p.whatsapp?.replace(/\D/g, '')}?text=Ol%C3%A1%20${encodeURIComponent(p.studioName)}!%20Lembrete%20de%20renova%C3%A7%C3%A3o%20da%20sua%20assinatura%20no%20S%C3%B3%20Fot%C3%B3grafos.`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="px-2.5 py-1 bg-[#25D366] text-white rounded-lg font-bold text-[10px] flex items-center gap-1 hover:bg-[#1ebd59]"
-                          title="Cobrar via WhatsApp"
-                        >
-                          <MessageSquare className="w-3 h-3 fill-white" />
-                          <span>WhatsApp</span>
-                        </a>
-
-                        <button
-                          onClick={() => alert(`Assinatura do estúdio ${p.studioName} renovada por +1 Ano!`)}
-                          className="px-2.5 py-1 bg-[#5A4035] text-white rounded-lg font-bold text-[10px] hover:bg-[#432e26]"
-                        >
-                          Renovar +1 Ano
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
+      {/* TAB: MERCADO PAGO GATEWAY SETTINGS */}
+      {activeTab === 'mercadopago' && <AdminMercadoPagoSettings />}
+      {activeTab === 'communication' && <AdminCommunicationManager />}
 
       {/* TAB 2: GERENCIAR ESTÚDIOS */}
       {activeTab === 'studios' && (
@@ -599,7 +508,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           <div className="bg-white rounded-3xl p-6 sm:p-8 border border-[#C88E9B]/20 shadow-sm space-y-4">
             <h2 className="text-xl font-serif font-bold text-[#5A4035]">Cobertura de Estados no Brasil</h2>
             <div className="space-y-3">
-              {BRAZIL_STATES.slice(0, 6).map((st) => (
+              {statesCatalog.slice(0, 6).map((st) => (
                 <div key={st.uf} className="flex items-center justify-between p-3 bg-[#FAF5F0] rounded-xl text-xs font-semibold">
                   <div className="flex items-center gap-2">
                     <span className="w-7 h-7 rounded-lg bg-[#5A4035] text-white flex items-center justify-center font-bold">
@@ -618,15 +527,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             <div className="space-y-3 text-xs text-[#5A4035]">
               <div className="p-3 bg-[#FAF5F0] rounded-xl flex items-center justify-between">
                 <span>Total de Estúdios Cadastrados</span>
-                <span className="font-bold text-[#5A4035]">7.840</span>
+                <span className="font-bold text-[#5A4035]">{adminMetrics.totalPhotographers || 0}</span>
               </div>
               <div className="p-3 bg-[#FAF5F0] rounded-xl flex items-center justify-between">
-                <span>Taxa de Renovação Anual</span>
-                <span className="text-emerald-600 font-bold">92.4%</span>
+                <span>Fotógrafos aprovados</span>
+                <span className="text-emerald-600 font-bold">{adminMetrics.approvedPhotographers || 0}</span>
               </div>
               <div className="p-3 bg-[#FAF5F0] rounded-xl flex items-center justify-between">
-                <span>Leads Entregues neste mês</span>
-                <span className="text-[#C88E9B] font-bold">18.420</span>
+                <span>Leads cadastrados</span>
+                <span className="text-[#C88E9B] font-bold">{adminMetrics.totalLeads || 0}</span>
               </div>
             </div>
           </div>

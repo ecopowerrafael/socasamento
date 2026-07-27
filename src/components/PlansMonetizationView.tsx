@@ -47,75 +47,7 @@ export const PlansMonetizationView: React.FC<PlansMonetizationViewProps> = () =>
       if (data.success && Array.isArray(data.plans) && data.plans.length > 0) {
         setPlans(data.plans);
       } else {
-        // Fallback default plans
-        setPlans([
-          {
-            id: 1,
-            name: 'Plano Gratuito',
-            shortDescription: 'Ideal para quem está iniciando no mercado de casamentos.',
-            isFree: true,
-            monthlyPrice: '0.00',
-            annualPrice: '0.00',
-            buttonText: 'Cadastrar Grátis',
-            isRecommended: false,
-            isPremium: false,
-            isFeatured: false,
-            items: [
-              { title: 'Perfil básico no diretório', isIncluded: true },
-              { title: 'Até 10 fotos na galeria', isIncluded: true },
-              { title: 'Links para redes sociais', isIncluded: true },
-              { title: 'Recebimento de orçamentos simples', isIncluded: true },
-            ],
-          },
-          {
-            id: 2,
-            name: 'Plano Destaque',
-            shortDescription: 'Aumente seus fechamentos de contratos de casamentos.',
-            isFree: false,
-            monthlyPrice: '89.00',
-            annualPrice: '890.00',
-            annualMonthlyEquivalent: '74.16',
-            annualSavingsAmount: '178.00',
-            annualDiscountPercentage: '16.6',
-            badgeText: 'Mais Recomendado',
-            buttonText: 'Assinar Plano Destaque',
-            isRecommended: true,
-            isPremium: false,
-            isFeatured: true,
-            mainColor: '#C88E9B',
-            items: [
-              { title: 'Selo Verificado de Qualidade', isIncluded: true, isFeatured: true },
-              { title: 'Galeria de fotos ILIMITADA', isIncluded: true },
-              { title: 'Inclusão em cotações múltiplas da cidade', isIncluded: true },
-              { title: 'CRM de leads com botão WhatsApp direto', isIncluded: true },
-              { title: 'Prioridade no topo das buscas regionais', isIncluded: true },
-            ],
-          },
-          {
-            id: 3,
-            name: 'Plano Premium',
-            shortDescription: 'Para estúdios consagrados e cobertura estadual.',
-            isFree: false,
-            monthlyPrice: '189.00',
-            annualPrice: '1890.00',
-            annualMonthlyEquivalent: '157.50',
-            annualSavingsAmount: '378.00',
-            annualDiscountPercentage: '20.00',
-            badgeText: 'Elite Guia',
-            buttonText: 'Seja Estúdio Premium',
-            isRecommended: false,
-            isPremium: true,
-            isFeatured: false,
-            mainColor: '#5A4035',
-            items: [
-              { title: 'Tudo do Plano Destaque', isIncluded: true },
-              { title: 'Posicionamento fixo na Home', isIncluded: true, isFeatured: true },
-              { title: 'Selo Premium Dourado + Selo Verificado', isIncluded: true },
-              { title: 'Publicação de casamentos reais no feed', isIncluded: true },
-              { title: 'Suporte VIP e relatórios mensais', isIncluded: true },
-            ],
-          },
-        ]);
+        setPlans([]);
       }
     } catch (err) {
       console.error('Error fetching public plans:', err);
@@ -283,11 +215,29 @@ export const PlansMonetizationView: React.FC<PlansMonetizationViewProps> = () =>
 
                 <div className="pt-6 mt-6 border-t border-stone-100/20">
                   <button
-                    onClick={() => {
-                      if (plan.buttonUrl) {
-                        window.location.href = plan.buttonUrl;
-                      } else {
-                        alert(`Plano '${plan.name}' selecionado! Em breve você será direcionado ao checkout seguro.`);
+                    onClick={async () => {
+                      if (plan.isFree) {
+                        window.location.href = '/cadastrar-estudio';
+                        return;
+                      }
+
+                      try {
+                        const billingCycle = cycle === 'annual' ? 'YEARLY' : 'MONTHLY';
+                        const res = await fetch('/api/photographer/subscription/mercado-pago/checkout', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ planId: plan.id, billingCycle }),
+                        });
+                        const data = await res.json();
+                        if (data.success && (data.initPoint || data.checkoutUrl)) {
+                          window.location.href = data.initPoint || data.checkoutUrl;
+                        } else if (data.error && data.error.includes('Fotógrafo não identificado')) {
+                          window.location.href = `/cadastrar-estudio?planId=${plan.id}&cycle=${billingCycle}`;
+                        } else {
+                          alert(data.error || 'Erro ao gerar checkout do Mercado Pago.');
+                        }
+                      } catch (err: any) {
+                        alert('Erro de conexão ao acessar o checkout do Mercado Pago: ' + err.message);
                       }
                     }}
                     className={`w-full py-3.5 rounded-xl font-bold text-xs shadow-md transition-all text-center cursor-pointer ${
@@ -298,7 +248,7 @@ export const PlansMonetizationView: React.FC<PlansMonetizationViewProps> = () =>
                         : 'bg-stone-100 hover:bg-stone-200 text-[#5A4035]'
                     }`}
                   >
-                    {plan.buttonText || 'Assinar Plano'}
+                    {plan.buttonText || 'Assinar com Mercado Pago'}
                   </button>
                 </div>
               </div>

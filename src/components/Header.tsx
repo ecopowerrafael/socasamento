@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { Camera, Scale, Sparkles, Menu, X, Search, User, LogOut, ShieldCheck } from 'lucide-react';
+import { Camera, Scale, Sparkles, Menu, X, Search, User, LogOut, ShieldCheck, Bell } from 'lucide-react';
 import { UserSession } from '../types';
+import { NotificationBell } from './NotificationBell';
 
 interface HeaderProps {
   currentView: string;
@@ -94,17 +95,29 @@ export const Header: React.FC<HeaderProps> = ({
 
             {/* Account Status / Login */}
             {userSession ? (
+              <>
+              <NotificationBell onOpenAll={() => setCurrentView('notifications')} />
               <div className="flex items-center gap-2 bg-white/80 border border-[#5A4035]/15 p-1.5 pl-3 rounded-xl">
                 <div className="text-left leading-tight">
                   <span className="block text-xs font-bold text-[#5A4035] truncate max-w-[120px]">
                     {userSession.name || userSession.email}
                   </span>
                   <span className="block text-[10px] font-semibold text-[#C88E9B] uppercase">
-                    {userSession.role === 'admin' || userSession.role === 'super_admin' ? '👑 Admin' : userSession.role === 'photographer' ? '📷 Fotógrafo' : '💍 Cliente'}
+                    {userSession.role === 'admin' || userSession.role === 'super_admin' ? '👑 Admin' : userSession.role === 'photographer' ? '📷 Fotógrafo' : '💍 Noiva / Casal'}
                   </span>
                 </div>
 
                 <div className="flex items-center gap-1 border-l border-[#5A4035]/10 pl-2">
+                  {(userSession.role === 'bride' || userSession.role === 'client') && (
+                    <button
+                      onClick={() => setCurrentView('tools')}
+                      className="p-1.5 bg-[#C88E9B] text-white hover:bg-[#b07885] rounded-lg transition-colors text-xs font-bold"
+                      title="Ir para o Portal do Casal"
+                    >
+                      <Sparkles className="w-4 h-4" />
+                    </button>
+                  )}
+
                   {(userSession.role === 'admin' || userSession.role === 'super_admin') && (
                     <button
                       onClick={() => setCurrentView('admin-panel')}
@@ -136,14 +149,24 @@ export const Header: React.FC<HeaderProps> = ({
                   )}
                 </div>
               </div>
+              </>
             ) : (
-              <button
-                onClick={() => setCurrentView('login')}
-                className="flex items-center gap-1.5 border border-[#5A4035]/20 hover:border-[#C88E9B] bg-white hover:bg-[#FAF5F0] text-[#5A4035] px-3.5 py-2 rounded-xl text-xs font-bold transition-all"
-              >
-                <User className="w-4 h-4 text-[#C88E9B]" />
-                <span>Entrar / Login</span>
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setCurrentView('cadastro-noiva')}
+                  className="hidden xl:flex items-center gap-1.5 bg-[#5A4035] hover:bg-[#432e26] text-white px-3.5 py-2 rounded-xl text-xs font-bold transition-all shadow-xs"
+                >
+                  <Sparkles className="w-3.5 h-3.5 text-[#C7A86A]" />
+                  <span>Cadastrar Casamento</span>
+                </button>
+                <button
+                  onClick={() => setCurrentView('login')}
+                  className="flex items-center gap-1.5 border border-[#5A4035]/20 hover:border-[#C88E9B] bg-white hover:bg-[#FAF5F0] text-[#5A4035] px-3.5 py-2 rounded-xl text-xs font-bold transition-all"
+                >
+                  <User className="w-4 h-4 text-[#C88E9B]" />
+                  <span>Entrar / Login</span>
+                </button>
+              </div>
             )}
           </div>
 
@@ -195,6 +218,8 @@ export const Header: React.FC<HeaderProps> = ({
           {/* Mobile Account Section */}
           <div className="pt-2 border-t border-[#5A4035]/10">
             {userSession ? (
+              <div className="space-y-2">
+              <button onClick={() => { setCurrentView('notifications'); setMobileMenuOpen(false); }} className="w-full bg-white p-3 rounded-xl border border-[#5A4035]/10 text-xs font-bold flex items-center gap-2"><Bell className="w-4 h-4 text-[#C88E9B]" /> Notificações</button>
               <div className="flex items-center justify-between bg-white p-3 rounded-xl border border-[#5A4035]/10">
                 <div>
                   <span className="block text-xs font-bold text-[#5A4035]">{userSession.name}</span>
@@ -211,6 +236,7 @@ export const Header: React.FC<HeaderProps> = ({
                     Sair
                   </button>
                 )}
+              </div>
               </div>
             ) : (
               <button

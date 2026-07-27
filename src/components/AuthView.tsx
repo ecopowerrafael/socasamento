@@ -7,6 +7,7 @@ interface AuthViewProps {
   resetTokenParam?: string;
   onLoginSuccess: (user: UserSession, photographerProfile?: any) => void;
   onNavigateHome: () => void;
+  onNavigateBrideRegister?: () => void;
 }
 
 export const AuthView: React.FC<AuthViewProps> = ({
@@ -14,6 +15,7 @@ export const AuthView: React.FC<AuthViewProps> = ({
   resetTokenParam = '',
   onLoginSuccess,
   onNavigateHome,
+  onNavigateBrideRegister,
 }) => {
   const [mode, setMode] = useState<'login' | 'register' | 'forgot' | 'reset'>(initialMode);
 
@@ -362,19 +364,34 @@ export const AuthView: React.FC<AuthViewProps> = ({
                 )}
               </button>
 
-              <div className="pt-4 border-t border-[#5A4035]/10 text-center text-xs text-[#5A4035]/80">
-                <span>É fotógrafo e ainda não tem cadastro? </span>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setErrorMessage('');
-                    setSuccessMessage('');
-                    setMode('register');
-                  }}
-                  className="font-bold text-[#C88E9B] hover:underline"
-                >
-                  Cadastrar meu estúdio
-                </button>
+              <div className="pt-4 border-t border-[#5A4035]/10 text-center text-xs text-[#5A4035]/80 space-y-2">
+                <div>
+                  <span>É noiva ou casal? </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (onNavigateBrideRegister) onNavigateBrideRegister();
+                      else window.location.href = '/cadastro-noiva';
+                    }}
+                    className="font-bold text-[#C88E9B] hover:underline"
+                  >
+                    Cadastre seu Casamento Grátis
+                  </button>
+                </div>
+                <div>
+                  <span>É fotógrafo e ainda não tem cadastro? </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setErrorMessage('');
+                      setSuccessMessage('');
+                      setMode('register');
+                    }}
+                    className="font-bold text-[#5A4035] hover:underline"
+                  >
+                    Cadastrar meu estúdio
+                  </button>
+                </div>
               </div>
             </form>
           )}

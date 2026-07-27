@@ -9,6 +9,8 @@ import {
   varchar,
   datetime,
   decimal,
+  index,
+  uniqueIndex,
 } from 'drizzle-orm/mysql-core';
 
 // Users table (Support local Auth + Firebase UID)
@@ -263,6 +265,8 @@ export const subscriptionPlans = mysqlTable('subscription_plans', {
   internalName: varchar('internal_name', { length: 100 }),
   slug: varchar('slug', { length: 100 }).notNull().unique(),
   internalCode: varchar('internal_code', { length: 100 }),
+  planType: varchar('plan_type', { length: 20 }).default('PREMIUM'), // 'FREE' | 'PREMIUM'
+  isDefaultFreePlan: boolean('is_default_free_plan').default(false),
   shortDescription: text('short_description'),
   description: text('description'),
   currency: varchar('currency', { length: 10 }).default('BRL'),
@@ -342,7 +346,102 @@ export const subscriptionPlanFeatures = mysqlTable('subscription_plan_features',
   updatedAt: datetime('updated_at').default(sql`CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP`),
 });
 
-// Subscriptions
+// Photographer Subscriptions (Complete System Table)
+export const photographerSubscriptions = mysqlTable('photographer_subscriptions', {
+  id: int('id').autoincrement().primaryKey(),
+  photographerId: int('photographer_id').notNull().references(() => photographers.id, { onDelete: 'cascade' }),
+  planId: int('plan_id').references(() => subscriptionPlans.id, { onDelete: 'set null' }),
+  billingCycle: varchar('billing_cycle', { length: 20 }).default('MONTHLY'), // 'MONTHLY' | 'YEARLY' | 'MANUAL' | 'FREE'
+  status: varchar('status', { length: 30 }).default('ACTIVE'), // 'PENDING' | 'ACTIVE' | 'PAST_DUE' | 'CANCEL_SCHEDULED' | 'CANCELLED' | 'EXPIRED' | 'SUSPENDED' | 'CHARGEBACK'
+  source: varchar('source', { length: 30 }).default('SIMULATION'), // 'MANUAL' | 'SIMULATION' | 'MERCADO_PAGO' | 'MIGRATION' | 'SYSTEM'
+  isComplimentary: boolean('is_complimentary').default(false),
+  countsAsRevenue: boolean('counts_as_revenue').default(true),
+  complimentaryReason: text('complimentary_reason'),
+  complimentaryApprovedBy: int('complimentary_approved_by'),
+  startsAt: datetime('starts_at'),
+  currentPeriodStart: datetime('current_period_start'),
+  currentPeriodEnd: datetime('current_period_end'),
+  nextBillingAt: datetime('next_billing_at'),
+  cancelAtPeriodEnd: boolean('cancel_at_period_end').default(false),
+  cancelRequestedAt: datetime('cancel_requested_at'),
+  cancelledAt: datetime('cancelled_at'),
+  expiredAt: datetime('expired_at'),
+  suspendedAt: datetime('suspended_at'),
+  totalSuspendedSeconds: int('total_suspended_seconds').default(0),
+  reactivatedAt: datetime('reactivated_at'),
+  gracePeriodEndsAt: datetime('grace_period_ends_at'),
+  scheduledPlanId: int('scheduled_plan_id'),
+  scheduledBillingCycle: varchar('scheduled_billing_cycle', { length: 20 }),
+  scheduledChangeAt: datetime('scheduled_change_at'),
+  chargebackAlert: boolean('chargeback_alert').default(false),
+  createdByAdminId: int('created_by_admin_id'),
+  adminNotes: text('admin_notes'),
+  createdAt: datetime('created_at').default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: datetime('updated_at').default(sql`CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP`),
+});
+
+// Subscription Payments
+export const subscriptionPayments = mysqlTable('subscription_payments', {
+  id: int('id').autoincrement().primaryKey(),
+  subscriptionId: int('subscription_id').references(() => photographerSubscriptions.id, { onDelete: 'set null' }),
+  photographerId: int('photographer_id').notNull().references(() => photographers.id, { onDelete: 'cascade' }),
+  planId: int('plan_id').references(() => subscriptionPlans.id, { onDelete: 'set null' }),
+  billingCycle: varchar('billing_cycle', { length: 20 }),
+  provider: varchar('provider', { length: 30 }).default('SIMULATION'), // 'MANUAL' | 'SIMULATION' | 'MERCADO_PAGO'
+  externalPaymentId: varchar('external_payment_id', { length: 255 }),
+  simulationEventId: varchar('simulation_event_id', { length: 255 }),
+  paymentReference: varchar('payment_reference', { length: 255 }),
+  amount: decimal('amount', { precision: 10, scale: 2 }).default('0.00'),
+  refundAmount: decimal('refund_amount', { precision: 10, scale: 2 }).default('0.00'),
+  isPartialRefund: boolean('is_partial_refund').default(false),
+  isChargeback: boolean('is_chargeback').default(false),
+  currency: varchar('currency', { length: 10 }).default('BRL'),
+  status: varchar('status', { length: 30 }).default('PENDING'), // 'PENDING' | 'APPROVED' | 'REJECTED' | 'CANCELLED' | 'REFUNDED' | 'CHARGEBACK'
+  paymentMethod: varchar('payment_method', { length: 50 }).default('SIMULATION'), // 'PIX' | 'CREDIT_CARD' | 'DEBIT_CARD' | 'BOLETO' | 'MANUAL' | 'SIMULATION'
+  installments: int('installments').default(1),
+  paidAt: datetime('paid_at'),
+  failedAt: datetime('failed_at'),
+  refundedAt: datetime('refunded_at'),
+  cancelledAt: datetime('cancelled_at'),
+  failureReason: text('failure_reason'),
+  metadataJson: json('metadata_json'),
+  createdByAdminId: int('created_by_admin_id'),
+  createdAt: datetime('created_at').default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: datetime('updated_at').default(sql`CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP`),
+});
+
+// Subscription History / Audit Log
+export const subscriptionHistory = mysqlTable('subscription_history', {
+  id: int('id').autoincrement().primaryKey(),
+  subscriptionId: int('subscription_id'),
+  photographerId: int('photographer_id').notNull().references(() => photographers.id, { onDelete: 'cascade' }),
+  previousPlanId: int('previous_plan_id'),
+  newPlanId: int('new_plan_id'),
+  previousStatus: varchar('previous_status', { length: 30 }),
+  newStatus: varchar('new_status', { length: 30 }),
+  previousBillingCycle: varchar('previous_billing_cycle', { length: 20 }),
+  newBillingCycle: varchar('new_billing_cycle', { length: 20 }),
+  eventType: varchar('event_type', { length: 50 }).notNull(),
+  performedByType: varchar('performed_by_type', { length: 30 }).default('SYSTEM'), // 'SYSTEM' | 'ADMIN' | 'PHOTOGRAPHER' | 'WEBHOOK'
+  performedUserId: int('performed_user_id'),
+  reason: text('reason'),
+  detailsJson: json('details_json'),
+  createdAt: datetime('created_at').default(sql`CURRENT_TIMESTAMP`),
+});
+
+// Photographer Plan Periods (Historical records)
+export const photographerPlanPeriods = mysqlTable('photographer_plan_periods', {
+  id: int('id').autoincrement().primaryKey(),
+  photographerId: int('photographer_id').notNull().references(() => photographers.id, { onDelete: 'cascade' }),
+  subscriptionId: int('subscription_id'),
+  planId: int('plan_id').notNull(),
+  startedAt: datetime('started_at').notNull(),
+  endedAt: datetime('ended_at'),
+  endReason: varchar('end_reason', { length: 50 }),
+  createdAt: datetime('created_at').default(sql`CURRENT_TIMESTAMP`),
+});
+
+// Subscriptions (Legacy alias table for backward compatibility)
 export const subscriptions = mysqlTable('subscriptions', {
   id: int('id').autoincrement().primaryKey(),
   photographerId: int('photographer_id').references(() => photographers.id, { onDelete: 'cascade' }),
@@ -619,6 +718,42 @@ export const weddingGifts = mysqlTable('wedding_gifts', {
   deletedAt: datetime('deleted_at'),
 });
 
+// Public Inspiration Catalog (managed by administrators)
+export const inspirations = mysqlTable('inspirations', {
+  id: varchar('id', { length: 100 }).primaryKey(),
+  title: varchar('title', { length: 255 }).notNull(),
+  category: varchar('category', { length: 100 }).notNull(),
+  imageUrl: text('image_url').notNull(),
+  likesCount: int('likes_count').default(0),
+  status: varchar('status', { length: 20 }).default('active'),
+  sortOrder: int('sort_order').default(0),
+  createdAt: datetime('created_at').default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: datetime('updated_at').default(sql`CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP`),
+}, (table) => [
+  index('idx_inspirations_status_order').on(table.status, table.sortOrder),
+]);
+
+// Public Photo Location Catalog (managed in MySQL)
+export const photoLocations = mysqlTable('photo_locations', {
+  id: varchar('id', { length: 100 }).primaryKey(),
+  name: varchar('name', { length: 255 }).notNull(),
+  category: varchar('category', { length: 100 }),
+  city: varchar('city', { length: 150 }),
+  state: varchar('state', { length: 2 }),
+  coverImage: text('cover_image'),
+  idealTime: varchar('ideal_time', { length: 255 }),
+  needAuthorization: boolean('need_authorization').default(false),
+  feeInfo: text('fee_info'),
+  description: text('description'),
+  address: text('address'),
+  status: varchar('status', { length: 20 }).default('active'),
+  sortOrder: int('sort_order').default(0),
+  createdAt: datetime('created_at').default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: datetime('updated_at').default(sql`CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP`),
+}, (table) => [
+  index('idx_photo_locations_status_order').on(table.status, table.sortOrder),
+]);
+
 // Inspiration Favorites
 export const inspirationFavorites = mysqlTable('inspiration_favorites', {
   id: int('id').autoincrement().primaryKey(),
@@ -628,7 +763,9 @@ export const inspirationFavorites = mysqlTable('inspiration_favorites', {
   category: varchar('category', { length: 100 }),
   imageUrl: text('image_url'),
   createdAt: datetime('created_at').default(sql`CURRENT_TIMESTAMP`),
-});
+}, (table) => [
+  uniqueIndex('uq_inspiration_favorite').on(table.userId, table.inspirationId),
+]);
 
 // Photographer Favorites
 export const photographerFavorites = mysqlTable('photographer_favorites', {
@@ -636,7 +773,9 @@ export const photographerFavorites = mysqlTable('photographer_favorites', {
   userId: int('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
   photographerId: int('photographer_id').notNull().references(() => photographers.id, { onDelete: 'cascade' }),
   createdAt: datetime('created_at').default(sql`CURRENT_TIMESTAMP`),
-});
+}, (table) => [
+  uniqueIndex('uq_photographer_favorite').on(table.userId, table.photographerId),
+]);
 
 // Photo Location Favorites
 export const photoLocationFavorites = mysqlTable('photo_location_favorites', {
@@ -645,7 +784,9 @@ export const photoLocationFavorites = mysqlTable('photo_location_favorites', {
   locationId: varchar('location_id', { length: 100 }).notNull(),
   locationName: varchar('location_name', { length: 255 }),
   createdAt: datetime('created_at').default(sql`CURRENT_TIMESTAMP`),
-});
+}, (table) => [
+  uniqueIndex('uq_photo_location_favorite').on(table.userId, table.locationId),
+]);
 
 // Photography Quote Simulations (Simulador de orçamento de fotografia)
 export const photographyQuoteSimulations = mysqlTable('photography_quote_simulations', {
@@ -775,3 +916,391 @@ export const passwordResets = mysqlTable('password_resets', {
   usedAt: datetime('used_at'),
   createdAt: datetime('created_at').default(sql`CURRENT_TIMESTAMP`),
 });
+
+// Payment Gateway Settings (Mercado Pago)
+export const paymentGatewaySettings = mysqlTable('payment_gateway_settings', {
+  id: int('id').autoincrement().primaryKey(),
+  provider: varchar('provider', { length: 50 }).notNull().default('MERCADO_PAGO'),
+  isEnabled: boolean('is_enabled').default(true),
+  environment: varchar('environment', { length: 20 }).notNull().default('TEST'), // 'TEST' | 'PRODUCTION'
+
+  testPublicKeyEncrypted: text('test_public_key_encrypted'),
+  testAccessTokenEncrypted: text('test_access_token_encrypted'),
+  testClientIdEncrypted: text('test_client_id_encrypted'),
+  testClientSecretEncrypted: text('test_client_secret_encrypted'),
+
+  productionPublicKeyEncrypted: text('production_public_key_encrypted'),
+  productionAccessTokenEncrypted: text('production_access_token_encrypted'),
+  productionClientIdEncrypted: text('production_client_id_encrypted'),
+  productionClientSecretEncrypted: text('production_client_secret_encrypted'),
+
+  testWebhookSecretEncrypted: text('test_webhook_secret_encrypted'),
+  productionWebhookSecretEncrypted: text('production_webhook_secret_encrypted'),
+
+  webhookPathToken: varchar('webhook_path_token', { length: 100 }),
+  lastConnectionTestAt: datetime('last_connection_test_at'),
+  lastConnectionTestStatus: varchar('last_connection_test_status', { length: 50 }),
+  lastConnectionTestMessage: text('last_connection_test_message'),
+  lastWebhookReceivedAt: datetime('last_webhook_received_at'),
+
+  createdByAdminId: int('created_by_admin_id'),
+  updatedByAdminId: int('updated_by_admin_id'),
+  createdAt: datetime('created_at').default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: datetime('updated_at').default(sql`CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP`),
+});
+
+// Payment Provider Webhook Events
+export const paymentProviderEvents = mysqlTable('payment_provider_events', {
+  id: int('id').autoincrement().primaryKey(),
+  provider: varchar('provider', { length: 50 }).notNull().default('MERCADO_PAGO'),
+  environment: varchar('environment', { length: 20 }).notNull().default('TEST'),
+  externalEventId: varchar('external_event_id', { length: 255 }),
+  externalRequestId: varchar('external_request_id', { length: 255 }),
+  eventType: varchar('event_type', { length: 100 }),
+  action: varchar('action', { length: 100 }),
+  externalResourceId: varchar('external_resource_id', { length: 255 }),
+  liveMode: boolean('live_mode').default(false),
+  subscriptionId: int('subscription_id'),
+  paymentId: int('payment_id'),
+  providerSubscriptionId: varchar('provider_subscription_id', { length: 255 }),
+  payloadJson: json('payload_json'),
+  headersSanitizedJson: json('headers_sanitized_json'),
+  signatureValid: boolean('signature_valid').default(true),
+  processingStatus: varchar('processing_status', { length: 50 }).notNull().default('RECEIVED'), // 'RECEIVED' | 'VALIDATING' | 'PROCESSING' | 'PROCESSED' | 'IGNORED' | 'RETRY_PENDING' | 'FAILED'
+  processingAttempts: int('processing_attempts').default(0),
+  receivedAt: datetime('received_at').default(sql`CURRENT_TIMESTAMP`),
+  processingStartedAt: datetime('processing_started_at'),
+  processedAt: datetime('processed_at'),
+  nextRetryAt: datetime('next_retry_at'),
+  errorCode: varchar('error_code', { length: 100 }),
+  errorMessage: text('error_message'),
+  createdAt: datetime('created_at').default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: datetime('updated_at').default(sql`CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP`),
+});
+
+// Subscription Provider Links
+export const subscriptionProviderLinks = mysqlTable('subscription_provider_links', {
+  id: int('id').autoincrement().primaryKey(),
+  subscriptionId: int('subscription_id').notNull().references(() => photographerSubscriptions.id, { onDelete: 'cascade' }),
+  photographerId: int('photographer_id').notNull().references(() => photographers.id, { onDelete: 'cascade' }),
+  provider: varchar('provider', { length: 50 }).notNull().default('MERCADO_PAGO'),
+  environment: varchar('environment', { length: 20 }).notNull().default('TEST'),
+  externalCustomerId: varchar('external_customer_id', { length: 255 }),
+  externalSubscriptionId: varchar('external_subscription_id', { length: 255 }),
+  externalPlanId: varchar('external_plan_id', { length: 255 }),
+  externalReference: varchar('external_reference', { length: 255 }),
+  externalStatus: varchar('external_status', { length: 100 }),
+  checkoutUrl: text('checkout_url'),
+  initPoint: text('init_point'),
+  sandboxInitPoint: text('sandbox_init_point'),
+  lastSynchronizedAt: datetime('last_synchronized_at'),
+  lastEventAt: datetime('last_event_at'),
+  metadataJson: json('metadata_json'),
+  createdAt: datetime('created_at').default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: datetime('updated_at').default(sql`CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP`),
+});
+
+// Payment Gateway Audit Logs
+export const paymentGatewayAuditLogs = mysqlTable('payment_gateway_audit_logs', {
+  id: int('id').autoincrement().primaryKey(),
+  provider: varchar('provider', { length: 50 }).notNull().default('MERCADO_PAGO'),
+  environment: varchar('environment', { length: 20 }),
+  action: varchar('action', { length: 100 }).notNull(),
+  adminId: int('admin_id'),
+  adminName: varchar('admin_name', { length: 255 }),
+  ipAddress: varchar('ip_address', { length: 100 }),
+  detailsJson: json('details_json'),
+  createdAt: datetime('created_at').default(sql`CURRENT_TIMESTAMP`),
+});
+
+// Push Notification Settings
+export const pushNotificationSettings = mysqlTable('push_notification_settings', {
+  id: int('id').autoincrement().primaryKey(),
+  isEnabled: boolean('is_enabled').default(true),
+  vapidPublicKey: text('vapid_public_key'),
+  vapidPrivateKeyEncrypted: text('vapid_private_key_encrypted'),
+  vapidSubject: text('vapid_subject').default('mailto:contato@guiadefotografocasamento.com.br'),
+  defaultIconUrl: text('default_icon_url'),
+  defaultBadgeUrl: text('default_badge_url'),
+  defaultClickUrl: text('default_click_url'),
+  maxDailyManualSends: int('max_daily_manual_sends').default(10),
+  quietHoursEnabled: boolean('quiet_hours_enabled').default(false),
+  quietHoursStart: varchar('quiet_hours_start', { length: 10 }).default('22:00'),
+  quietHoursEnd: varchar('quiet_hours_end', { length: 10 }).default('08:00'),
+  timezone: varchar('timezone', { length: 100 }).default('America/Sao_Paulo'),
+  lastTestAt: datetime('last_test_at'),
+  lastTestStatus: varchar('last_test_status', { length: 50 }),
+  lastTestMessage: text('last_test_message'),
+  createdByAdminId: int('created_by_admin_id'),
+  updatedByAdminId: int('updated_by_admin_id'),
+  createdAt: datetime('created_at').default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: datetime('updated_at').default(sql`CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP`),
+});
+
+// Push Subscriptions
+export const pushSubscriptions = mysqlTable('push_subscriptions', {
+  id: int('id').autoincrement().primaryKey(),
+  userId: int('user_id'),
+  userType: varchar('user_type', { length: 50 }).notNull().default('PHOTOGRAPHER'), // 'PHOTOGRAPHER' | 'BRIDE' | 'ADMIN'
+  endpoint: text('endpoint').notNull(),
+  endpointHash: varchar('endpoint_hash', { length: 255 }).notNull(),
+  p256dhKey: text('p256dh_key').notNull(),
+  authKey: text('auth_key').notNull(),
+  contentEncoding: varchar('content_encoding', { length: 50 }).default('aes128gcm'),
+  browser: varchar('browser', { length: 100 }),
+  browserVersion: varchar('browser_version', { length: 100 }),
+  operatingSystem: varchar('operating_system', { length: 100 }),
+  deviceType: varchar('device_type', { length: 50 }),
+  deviceName: varchar('device_name', { length: 255 }),
+  language: varchar('language', { length: 50 }),
+  timezone: varchar('timezone', { length: 100 }),
+  isPwa: boolean('is_pwa').default(false),
+  isActive: boolean('is_active').default(true),
+  permissionStatus: varchar('permission_status', { length: 50 }).default('granted'),
+  lastSuccessAt: datetime('last_success_at'),
+  lastFailureAt: datetime('last_failure_at'),
+  failureCount: int('failure_count').default(0),
+  expiresAt: datetime('expires_at'),
+  revokedAt: datetime('revoked_at'),
+  createdAt: datetime('created_at').default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: datetime('updated_at').default(sql`CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP`),
+}, (table) => [
+  uniqueIndex('uq_push_user_endpoint').on(table.userId, table.endpointHash),
+  index('idx_push_active_user').on(table.isActive, table.userId),
+]);
+
+// In-App User Notifications
+export const userNotifications = mysqlTable('user_notifications', {
+  id: int('id').autoincrement().primaryKey(),
+  userId: int('user_id').notNull(),
+  userType: varchar('user_type', { length: 50 }).notNull().default('PHOTOGRAPHER'),
+  eventType: varchar('event_type', { length: 100 }),
+  category: varchar('category', { length: 50 }).default('SYSTEM'), // 'QUOTE' | 'MESSAGE' | 'AGENDA' | 'SUBSCRIPTION' | 'PAYMENT' | 'ACCOUNT' | 'MARKETING' | 'SYSTEM' | 'ADMINISTRATIVE'
+  title: varchar('title', { length: 255 }).notNull(),
+  message: text('message').notNull(),
+  imageUrl: text('image_url'),
+  actionUrl: text('action_url'),
+  resourceType: varchar('resource_type', { length: 100 }),
+  resourceId: int('resource_id'),
+  priority: varchar('priority', { length: 20 }).default('NORMAL'), // 'LOW' | 'NORMAL' | 'HIGH' | 'URGENT'
+  isRead: boolean('is_read').default(false),
+  readAt: datetime('read_at'),
+  isArchived: boolean('is_archived').default(false),
+  archivedAt: datetime('archived_at'),
+  metadataJson: json('metadata_json'),
+  expiresAt: datetime('expires_at'),
+  createdAt: datetime('created_at').default(sql`CURRENT_TIMESTAMP`),
+});
+
+// Notification Preferences per User
+export const notificationPreferences = mysqlTable('notification_preferences', {
+  id: int('id').autoincrement().primaryKey(),
+  userId: int('user_id').notNull(),
+  userType: varchar('user_type', { length: 50 }).default('PHOTOGRAPHER'),
+  eventType: varchar('event_type', { length: 100 }).notNull(),
+  inAppEnabled: boolean('in_app_enabled').default(true),
+  pushEnabled: boolean('push_enabled').default(true),
+  emailEnabled: boolean('email_enabled').default(true),
+  createdAt: datetime('created_at').default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: datetime('updated_at').default(sql`CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP`),
+}, (table) => [
+  uniqueIndex('uq_notification_preference').on(table.userId, table.eventType),
+]);
+
+// Push Campaigns (Manual and Scheduled)
+export const pushCampaigns = mysqlTable('push_campaigns', {
+  id: int('id').autoincrement().primaryKey(),
+  name: varchar('name', { length: 255 }).notNull(),
+  title: varchar('title', { length: 255 }).notNull(),
+  message: text('message').notNull(),
+  imageUrl: text('image_url'),
+  actionUrl: text('action_url'),
+  targetType: varchar('target_type', { length: 50 }).default('ALL'), // 'ALL' | 'PHOTOGRAPHERS' | 'BRIDES' | 'ADMINS' | 'SPECIFIC'
+  targetFiltersJson: json('target_filters_json'),
+  priority: varchar('priority', { length: 20 }).default('NORMAL'),
+  status: varchar('status', { length: 50 }).default('DRAFT'), // 'DRAFT' | 'SCHEDULED' | 'PROCESSING' | 'COMPLETED' | 'PARTIALLY_COMPLETED' | 'CANCELLED' | 'FAILED'
+  scheduledAt: datetime('scheduled_at'),
+  startedAt: datetime('started_at'),
+  completedAt: datetime('completed_at'),
+  cancelledAt: datetime('cancelled_at'),
+  totalUsers: int('total_users').default(0),
+  totalDevices: int('total_devices').default(0),
+  totalSent: int('total_sent').default(0),
+  totalDelivered: int('total_delivered').default(0),
+  totalFailed: int('total_failed').default(0),
+  totalClicked: int('total_clicked').default(0),
+  createdByAdminId: int('created_by_admin_id'),
+  createdAt: datetime('created_at').default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: datetime('updated_at').default(sql`CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP`),
+});
+
+// Push Campaign Recipients
+export const pushCampaignRecipients = mysqlTable('push_campaign_recipients', {
+  id: int('id').autoincrement().primaryKey(),
+  campaignId: int('campaign_id').notNull(),
+  userId: int('user_id').notNull(),
+  pushSubscriptionId: int('push_subscription_id'),
+  status: varchar('status', { length: 50 }).default('PENDING'),
+  sentAt: datetime('sent_at'),
+  deliveredAt: datetime('delivered_at'),
+  clickedAt: datetime('clicked_at'),
+  failedAt: datetime('failed_at'),
+  failureCode: varchar('failure_code', { length: 100 }),
+  failureMessage: text('failure_message'),
+  createdAt: datetime('created_at').default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: datetime('updated_at').default(sql`CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP`),
+});
+
+// Notification Delivery Queue (MySQL Persistent Queue)
+export const notificationDeliveryQueue = mysqlTable('notification_delivery_queue', {
+  id: int('id').autoincrement().primaryKey(),
+  notificationId: int('notification_id'),
+  campaignId: int('campaign_id'),
+  userId: int('user_id'),
+  channel: varchar('channel', { length: 20 }).notNull(), // 'PUSH' | 'EMAIL' | 'IN_APP'
+  destinationReference: text('destination_reference'),
+  status: varchar('status', { length: 50 }).default('PENDING'), // 'PENDING' | 'PROCESSING' | 'SENT' | 'DELIVERED' | 'RETRY_PENDING' | 'FAILED' | 'CANCELLED' | 'SKIPPED'
+  attempts: int('attempts').default(0),
+  maxAttempts: int('max_attempts').default(5),
+  scheduledAt: datetime('scheduled_at').default(sql`CURRENT_TIMESTAMP`),
+  processingStartedAt: datetime('processing_started_at'),
+  sentAt: datetime('sent_at'),
+  failedAt: datetime('failed_at'),
+  nextRetryAt: datetime('next_retry_at'),
+  errorCode: varchar('error_code', { length: 100 }),
+  errorMessage: text('error_message'),
+  createdAt: datetime('created_at').default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: datetime('updated_at').default(sql`CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP`),
+}, (table) => [
+  index('idx_delivery_worker').on(table.status, table.scheduledAt),
+]);
+
+// Bride Event Reminders
+export const eventReminders = mysqlTable('event_reminders', {
+  id: int('id').autoincrement().primaryKey(),
+  eventId: int('event_id').notNull(),
+  userId: int('user_id').notNull(),
+  reminderType: varchar('reminder_type', { length: 50 }).default('1_DAY_BEFORE'),
+  remindAt: datetime('remind_at').notNull(),
+  channelsJson: json('channels_json'),
+  status: varchar('status', { length: 50 }).default('SCHEDULED'), // 'SCHEDULED' | 'PROCESSING' | 'SENT' | 'CANCELLED' | 'FAILED'
+  sentAt: datetime('sent_at'),
+  cancelledAt: datetime('cancelled_at'),
+  createdAt: datetime('created_at').default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: datetime('updated_at').default(sql`CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP`),
+}, (table) => [
+  uniqueIndex('uq_event_reminder').on(table.eventId, table.reminderType, table.remindAt),
+  index('idx_reminder_worker').on(table.status, table.remindAt),
+]);
+
+// SMTP Server Settings
+export const smtpSettings = mysqlTable('smtp_settings', {
+  id: int('id').autoincrement().primaryKey(),
+  isEnabled: boolean('is_enabled').default(false),
+  host: varchar('host', { length: 255 }),
+  port: int('port').default(587),
+  secureMode: varchar('secure_mode', { length: 50 }).default('STARTTLS'), // 'NONE' | 'STARTTLS' | 'SSL_TLS'
+  usernameEncrypted: text('username_encrypted'),
+  passwordEncrypted: text('password_encrypted'),
+  fromName: varchar('from_name', { length: 255 }).default('Guia Fotógrafo Casamento'),
+  fromEmail: varchar('from_email', { length: 255 }),
+  replyToEmail: varchar('reply_to_email', { length: 255 }),
+  connectionTimeoutMs: int('connection_timeout_ms').default(10000),
+  sendTimeoutMs: int('send_timeout_ms').default(15000),
+  rateLimitPerMinute: int('rate_limit_per_minute').default(60),
+  rateLimitPerHour: int('rate_limit_per_hour').default(1000),
+  lastTestAt: datetime('last_test_at'),
+  lastTestStatus: varchar('last_test_status', { length: 50 }),
+  lastTestMessage: text('last_test_message'),
+  createdByAdminId: int('created_by_admin_id'),
+  updatedByAdminId: int('updated_by_admin_id'),
+  createdAt: datetime('created_at').default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: datetime('updated_at').default(sql`CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP`),
+});
+
+// Notification Templates
+export const notificationTemplates = mysqlTable('notification_templates', {
+  id: int('id').autoincrement().primaryKey(),
+  eventType: varchar('event_type', { length: 100 }).notNull(),
+  channel: varchar('channel', { length: 20 }).notNull(), // 'EMAIL' | 'PUSH' | 'IN_APP'
+  userType: varchar('user_type', { length: 50 }).default('ALL'),
+  name: varchar('name', { length: 255 }).notNull(),
+  subject: varchar('subject', { length: 255 }),
+  title: varchar('title', { length: 255 }),
+  bodyHtml: text('body_html'),
+  bodyText: text('body_text'),
+  actionLabel: varchar('action_label', { length: 100 }),
+  actionUrlTemplate: text('action_url_template'),
+  isActive: boolean('is_active').default(true),
+  version: int('version').default(1),
+  availableVariablesJson: json('available_variables_json'),
+  createdAt: datetime('created_at').default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: datetime('updated_at').default(sql`CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP`),
+});
+
+// Email Messages Queue & History
+export const emailMessages = mysqlTable('email_messages', {
+  id: int('id').autoincrement().primaryKey(),
+  userId: int('user_id'),
+  notificationId: int('notification_id'),
+  templateId: int('template_id'),
+  recipientEmail: varchar('recipient_email', { length: 255 }).notNull(),
+  recipientName: varchar('recipient_name', { length: 255 }),
+  subject: varchar('subject', { length: 255 }).notNull(),
+  bodyHtml: text('body_html'),
+  bodyText: text('body_text'),
+  status: varchar('status', { length: 50 }).default('PENDING'), // 'PENDING' | 'PROCESSING' | 'SENT' | 'RETRY_PENDING' | 'FAILED' | 'CANCELLED'
+  priority: varchar('priority', { length: 20 }).default('NORMAL'),
+  scheduledAt: datetime('scheduled_at').default(sql`CURRENT_TIMESTAMP`),
+  processingStartedAt: datetime('processing_started_at'),
+  sentAt: datetime('sent_at'),
+  failedAt: datetime('failed_at'),
+  attempts: int('attempts').default(0),
+  providerMessageId: varchar('provider_message_id', { length: 255 }),
+  errorCode: varchar('error_code', { length: 100 }),
+  errorMessage: text('error_message'),
+  createdAt: datetime('created_at').default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: datetime('updated_at').default(sql`CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP`),
+});
+
+// Unified Notification Deliveries Log
+export const notificationDeliveries = mysqlTable('notification_deliveries', {
+  id: int('id').autoincrement().primaryKey(),
+  notificationId: int('notification_id'),
+  userId: int('user_id'),
+  channel: varchar('channel', { length: 20 }).notNull(), // 'PUSH' | 'EMAIL' | 'IN_APP'
+  destinationId: varchar('destination_id', { length: 255 }),
+  status: varchar('status', { length: 50 }).notNull(),
+  attempts: int('attempts').default(1),
+  sentAt: datetime('sent_at'),
+  deliveredAt: datetime('delivered_at'),
+  openedAt: datetime('opened_at'),
+  clickedAt: datetime('clicked_at'),
+  failedAt: datetime('failed_at'),
+  errorCode: varchar('error_code', { length: 100 }),
+  errorMessage: text('error_message'),
+  metadataJson: json('metadata_json'),
+  createdAt: datetime('created_at').default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: datetime('updated_at').default(sql`CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP`),
+});
+
+// Notification Automation Rules
+export const notificationAutomationRules = mysqlTable('notification_automation_rules', {
+  id: int('id').autoincrement().primaryKey(),
+  eventType: varchar('event_type', { length: 100 }).notNull(),
+  userType: varchar('user_type', { length: 50 }).default('ALL'),
+  isActive: boolean('is_active').default(true),
+  inAppEnabled: boolean('in_app_enabled').default(true),
+  pushEnabled: boolean('push_enabled').default(true),
+  emailEnabled: boolean('email_enabled').default(true),
+  emailDelayMinutes: int('email_delay_minutes').default(0),
+  pushDelayMinutes: int('push_delay_minutes').default(0),
+  priority: varchar('priority', { length: 20 }).default('NORMAL'),
+  templateInAppId: int('template_in_app_id'),
+  templatePushId: int('template_push_id'),
+  templateEmailId: int('template_email_id'),
+  createdAt: datetime('created_at').default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: datetime('updated_at').default(sql`CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP`),
+}, (table) => [
+  uniqueIndex('uq_automation_rule').on(table.eventType, table.userType),
+]);
