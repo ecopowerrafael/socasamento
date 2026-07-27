@@ -52,10 +52,16 @@ import { NotificationEventService, eventReminderService, notificationDeliveryWor
 
 async function startServer() {
   const app = express();
-  const PORT = 3000;
+  const PORT = Number(process.env.PORT || 3000);
 
   app.use(express.json());
   app.use(cookieParser());
+
+  // Hostinger requires listen() within 3 seconds. Schema migrations and
+  // initial seeding can take longer, so open the HTTP port before bootstrap.
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`Server listening on port ${PORT}; initializing MySQL...`);
+  });
 
   // MySQL is mandatory. No functional data is served from memory or browser storage.
   console.log('Verificando conexão e schema do MySQL...');
@@ -2918,9 +2924,9 @@ Formate a resposta em tópicos claros com markdown.`;
     });
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Server running on http://localhost:${PORT}`);
-  });
 }
 
-startServer();
+startServer().catch((error) => {
+  console.error('Falha fatal durante a inicialização:', error);
+  process.exit(1);
+});
