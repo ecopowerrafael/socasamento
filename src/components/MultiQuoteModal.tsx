@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { X, Sparkles, CheckCircle2, MessageSquare, ShieldCheck, Heart } from 'lucide-react';
 import { Photographer, DeliveryType, StyleType, PricingPackage } from '../types';
 
@@ -33,6 +33,18 @@ export const MultiQuoteModal: React.FC<MultiQuoteModalProps> = ({
 
   const [loading, setLoading] = useState(false);
   const [successLead, setSuccessLead] = useState<any>(null);
+  const [createAccount, setCreateAccount] = useState(true);
+  const [password, setPassword] = useState('');
+
+  useEffect(() => {
+    if (!isOpen) return;
+    setFormData((previous) => ({
+      ...previous,
+      city: selectedPhotographers[0]?.city || previous.city || 'Piracicaba',
+      state: selectedPhotographers[0]?.state || previous.state || 'SP',
+    }));
+    setSuccessLead(null);
+  }, [isOpen, selectedPhotographers]);
 
   if (!isOpen) return null;
 
@@ -44,9 +56,6 @@ export const MultiQuoteModal: React.FC<MultiQuoteModalProps> = ({
         : [...prev, serv]
     }));
   };
-
-  const [createAccount, setCreateAccount] = useState(true);
-  const [password, setPassword] = useState('');
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

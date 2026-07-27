@@ -1,4 +1,4 @@
-const CACHE_NAME = 'guia-casamento-v2';
+const CACHE_NAME = 'guia-casamento-v3';
 const OFFLINE_URL = '/offline.html';
 
 const CACHE_FIRST_ASSETS = [
