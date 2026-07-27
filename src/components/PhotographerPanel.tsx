@@ -20,15 +20,56 @@ export const PhotographerPanel: React.FC<PhotographerPanelProps> = ({
 
   // Edit profile form state
   const [editBio, setEditBio] = useState(photographer.bioFull);
-  const [editStartingPrice, setEditStartingPrice] = useState(photographer.priceStartingFrom);
+  const [editStartingPrice, setEditStartingPrice] = useState(
+    Number.isFinite(Number(photographer.priceStartingFrom)) ? Number(photographer.priceStartingFrom) : 0,
+  );
   const [editPhone, setEditPhone] = useState(photographer.phone);
+  const [editAvatar, setEditAvatar] = useState(photographer.avatar);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
 
   // Edit Work Photos / Gallery state backed by MySQL
   const [galleryList, setGalleryList] = useState<PhotoItem[]>(photographer.gallery || []);
   const [newPhotoUrl, setNewPhotoUrl] = useState('');
+  const [newPhotoFile, setNewPhotoFile] = useState<File | null>(null);
   const [newPhotoCaption, setNewPhotoCaption] = useState('');
   const [newPhotoCategory, setNewPhotoCategory] = useState<'Cerimônia' | 'Making Of' | 'Pré Wedding' | 'Festa' | 'Drone' | 'Álbuns'>('Cerimônia');
   const [newPhotoFeatured, setNewPhotoFeatured] = useState(false);
+  const [uploadingGalleryPhoto, setUploadingGalleryPhoto] = useState(false);
+
+  const uploadImageFile = async (file: File) => {
+    const supportedTypes = ['image/jpeg', 'image/png', 'image/webp'];
+    if (!supportedTypes.includes(file.type)) throw new Error('Escolha uma imagem JPG, PNG ou WebP.');
+    if (file.size > 5 * 1024 * 1024) throw new Error('A imagem deve ter no máximo 5 MB.');
+
+    const dataUrl = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result));
+      reader.onerror = () => reject(new Error('Não foi possível ler a imagem.'));
+      reader.readAsDataURL(file);
+    });
+    const response = await fetch('/api/uploads/image', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ dataUrl }),
+    });
+    const result = await response.json();
+    if (!response.ok || result.success === false) throw new Error(result.error || 'Não foi possível enviar a imagem.');
+    return String(result.url);
+  };
+
+  const handleAvatarUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    try {
+      setUploadingAvatar(true);
+      setEditAvatar(await uploadImageFile(file));
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'Não foi possível enviar a foto de perfil.');
+    } finally {
+      setUploadingAvatar(false);
+      event.target.value = '';
+    }
+  };
 
   useEffect(() => {
     fetch('/api/leads?photographerId=' + photographer.id)
@@ -75,28 +116,38 @@ export const PhotographerPanel: React.FC<PhotographerPanelProps> = ({
 
   const handleAddPhoto = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newPhotoUrl.trim()) return;
+    if (!newPhotoUrl.trim() && !newPhotoFile) return;
 
-    const response = await fetch(`/api/photographers/${photographer.id}/gallery`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        url: newPhotoUrl.trim(),
-        caption: newPhotoCaption.trim() || 'Foto de Casamento',
-        category: newPhotoCategory,
-        featured: newPhotoFeatured,
-        sortOrder: 0,
-      }),
-    });
-    const result = await response.json();
-    if (!response.ok || result.success === false) {
-      alert(result.error || 'Não foi possível adicionar a foto.');
-      return;
+    let photoUrl = newPhotoUrl.trim();
+    try {
+      if (newPhotoFile) {
+        setUploadingGalleryPhoto(true);
+        photoUrl = await uploadImageFile(newPhotoFile);
+      }
+
+      const response = await fetch(`/api/photographers/${photographer.id}/gallery`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          url: photoUrl,
+          caption: newPhotoCaption.trim() || 'Foto de Casamento',
+          category: newPhotoCategory,
+          featured: newPhotoFeatured,
+          sortOrder: 0,
+        }),
+      });
+      const result = await response.json();
+      if (!response.ok || result.success === false) throw new Error(result.error || 'Não foi possível adicionar a foto.');
+      setGalleryList((previous) => [{ ...result.media, id: String(result.media.id) }, ...previous]);
+      setNewPhotoUrl('');
+      setNewPhotoFile(null);
+      setNewPhotoCaption('');
+      setNewPhotoFeatured(false);
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'Não foi possível adicionar a foto.');
+    } finally {
+      setUploadingGalleryPhoto(false);
     }
-    setGalleryList((previous) => [{ ...result.media, id: String(result.media.id) }, ...previous]);
-    setNewPhotoUrl('');
-    setNewPhotoCaption('');
-    setNewPhotoFeatured(false);
   };
 
   const handleRemovePhoto = async (id: string) => {
@@ -148,11 +199,13 @@ export const PhotographerPanel: React.FC<PhotographerPanelProps> = ({
 
   const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
+    const safeStartingPrice = Number.isFinite(editStartingPrice) ? Math.max(0, Math.round(editStartingPrice)) : 0;
     const updated: Photographer = {
       ...photographer,
       bioFull: editBio,
-      priceStartingFrom: editStartingPrice,
+      priceStartingFrom: safeStartingPrice,
       phone: editPhone,
+      avatar: editAvatar.trim() || photographer.avatar,
       gallery: galleryList
     };
     const response = await fetch('/api/photographers', {
@@ -425,13 +478,48 @@ export const PhotographerPanel: React.FC<PhotographerPanelProps> = ({
                 ></textarea>
               </div>
 
+              <div className="rounded-2xl border border-[#C88E9B]/20 bg-[#FAF5F0] p-4">
+                <label className="block font-bold text-[#5A4035] mb-2">Foto do Perfil:</label>
+                <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
+                  <img
+                    src={editAvatar.trim() || photographer.avatar}
+                    alt="Prévia da foto de perfil"
+                    className="w-16 h-16 rounded-2xl object-cover border-2 border-white shadow-sm bg-white"
+                  />
+                  <div className="flex-1 w-full">
+                    <input
+                      type="url"
+                      placeholder="https://exemplo.com/minha-foto.jpg"
+                      value={editAvatar}
+                      onChange={(e) => setEditAvatar(e.target.value)}
+                      className="w-full p-2.5 bg-white border border-[#5A4035]/20 rounded-xl"
+                    />
+                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                      <label className="inline-flex items-center gap-1.5 px-3 py-2 bg-[#5A4035] text-white font-bold rounded-xl cursor-pointer hover:bg-[#432e26] transition-colors">
+                        <Upload className="w-3.5 h-3.5 text-[#C7A86A]" />
+                        <span>{uploadingAvatar ? 'Enviando foto...' : 'Enviar foto do computador'}</span>
+                        <input
+                          type="file"
+                          accept="image/jpeg,image/png,image/webp"
+                          onChange={handleAvatarUpload}
+                          disabled={uploadingAvatar}
+                          className="sr-only"
+                        />
+                      </label>
+                      <span className="text-[10px] text-[#5A4035]/65">JPG, PNG ou WebP, até 5 MB.</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block font-bold text-[#5A4035] mb-1">Preço Inicial (R$):</label>
                   <input
                     type="number"
+                    min="0"
                     value={editStartingPrice}
-                    onChange={(e) => setEditStartingPrice(Number(e.target.value))}
+                    onChange={(e) => setEditStartingPrice(e.target.value === '' ? 0 : Number(e.target.value))}
                     className="w-full p-2.5 bg-[#FAF5F0] border border-[#5A4035]/20 rounded-xl font-bold"
                   />
                 </div>
@@ -450,6 +538,7 @@ export const PhotographerPanel: React.FC<PhotographerPanelProps> = ({
               <div className="pt-2">
                 <button
                   type="submit"
+                  disabled={uploadingAvatar}
                   className="px-6 py-3 bg-[#C88E9B] text-white font-bold rounded-xl hover:bg-[#b07885] transition-colors shadow-sm"
                 >
                   Salvar Perfil Completo
@@ -490,14 +579,21 @@ export const PhotographerPanel: React.FC<PhotographerPanelProps> = ({
 
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 text-xs">
                 <div className="sm:col-span-2 lg:col-span-1">
-                  <label className="block font-semibold text-[#5A4035] mb-1">URL da Imagem:</label>
+                  <label className="block font-semibold text-[#5A4035] mb-1">Enviar imagem ou informar URL:</label>
+                  <input
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    onChange={(event) => setNewPhotoFile(event.target.files?.[0] || null)}
+                    className="w-full p-2 bg-white border border-[#5A4035]/20 rounded-xl text-[11px]"
+                  />
                   <input
                     type="url"
                     placeholder="https://images.unsplash.com/..."
                     value={newPhotoUrl}
                     onChange={(e) => setNewPhotoUrl(e.target.value)}
-                    className="w-full p-2.5 bg-white border border-[#5A4035]/20 rounded-xl"
+                    className="w-full mt-2 p-2.5 bg-white border border-[#5A4035]/20 rounded-xl"
                   />
+                  <p className="mt-1 text-[10px] text-[#5A4035]/65">JPG, PNG ou WebP, até 5 MB. O arquivo enviado tem prioridade sobre a URL.</p>
                 </div>
 
                 <div>
@@ -544,10 +640,11 @@ export const PhotographerPanel: React.FC<PhotographerPanelProps> = ({
                 <div className="flex items-center gap-2">
                   <button
                     type="submit"
+                    disabled={uploadingGalleryPhoto}
                     className="px-5 py-2.5 bg-[#5A4035] text-white font-bold rounded-xl hover:bg-[#432e26] transition-colors flex items-center gap-1.5"
                   >
                     <Plus className="w-4 h-4 text-[#C7A86A]" />
-                    <span>Adicionar Foto</span>
+                    <span>{uploadingGalleryPhoto ? 'Enviando...' : 'Adicionar Foto'}</span>
                   </button>
                 </div>
               </div>

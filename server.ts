@@ -1,5 +1,7 @@
 import express from 'express';
 import path from 'path';
+import fs from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
 import cookieParser from 'cookie-parser';
 import { createServer as createViteServer } from 'vite';
 import { GoogleGenAI } from '@google/genai';
@@ -55,8 +57,15 @@ async function startServer() {
   const PORT = Number(process.env.PORT || 3000);
   let databaseReady = false;
 
-  app.use(express.json());
+  app.use(express.json({ limit: '8mb' }));
   app.use(cookieParser());
+  // Keep user files outside the deploy directory. On Hostinger the app runs
+  // from ".../nodejs", so the default becomes ".../uploads" and survives a redeploy.
+  const uploadsPath = process.env.UPLOADS_DIR
+    ? path.resolve(process.env.UPLOADS_DIR)
+    : path.resolve(process.cwd(), '..', 'uploads');
+  await fs.mkdir(uploadsPath, { recursive: true });
+  app.use('/uploads', express.static(uploadsPath));
 
   // Hostinger requires listen() within 3 seconds. Schema migrations and
   // initial seeding can take longer, so open the HTTP port before bootstrap.
@@ -335,6 +344,35 @@ async function startServer() {
 
   // Create or Update Photographer Profile (Protected for Photographer or Admin)
   app.post(
+    '/api/uploads/image',
+    requireAuth,
+    requirePhotographerOrAdmin,
+    async (req: AuthRequest, res) => {
+      try {
+        const dataUrl = typeof req.body?.dataUrl === 'string' ? req.body.dataUrl : '';
+        const match = dataUrl.match(/^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=]+)$/);
+        if (!match) {
+          return res.status(400).json({ success: false, error: 'Envie uma imagem JPG, PNG ou WebP válida.' });
+        }
+
+        const mimeType = match[1];
+        const imageBuffer = Buffer.from(match[2], 'base64');
+        if (imageBuffer.length === 0 || imageBuffer.length > 5 * 1024 * 1024) {
+          return res.status(400).json({ success: false, error: 'A imagem deve ter no máximo 5 MB.' });
+        }
+
+        const extension = mimeType === 'image/png' ? 'png' : mimeType === 'image/webp' ? 'webp' : 'jpg';
+        const fileName = `${randomUUID()}.${extension}`;
+        await fs.writeFile(path.join(uploadsPath, fileName), imageBuffer, { flag: 'wx' });
+        return res.status(201).json({ success: true, url: `/uploads/${fileName}` });
+      } catch (err) {
+        console.error('Error uploading image:', err);
+        return res.status(500).json({ success: false, error: 'Não foi possível enviar a imagem. Tente novamente.' });
+      }
+    },
+  );
+
+  app.post(
     '/api/photographers',
     requireAuth,
     requirePhotographerOrAdmin,
@@ -342,6 +380,11 @@ async function startServer() {
       try {
         const userUid = req.user!.uid;
         const data = req.body;
+        const integerOrFallback = (value: unknown, fallback: number) => {
+          if (typeof value === 'string' && value.trim() === '') return fallback;
+          const parsed = Number(value);
+          return Number.isFinite(parsed) ? Math.max(0, Math.round(parsed)) : fallback;
+        };
 
         let slug = data.slug;
         if (!slug) {
@@ -397,31 +440,32 @@ async function startServer() {
               .where(eq(photographers.id, newId));
             savedProfile = fetched[0];
           } else {
+            const currentProfile = existingProfile[0];
             await db
               .update(photographers)
               .set({
-                name: data.name,
-                studioName: data.studioName,
-                avatar: data.avatar,
-                coverImage: data.coverImage,
-                city: data.city,
-                state: data.state,
-                neighborhood: data.neighborhood,
-                priceStartingFrom: Number(data.priceStartingFrom),
-                priceCategory: data.priceCategory,
-                styles: data.styles,
-                deliverables: data.deliverables,
-                categories: data.categories,
-                yearsExperience: Number(data.yearsExperience),
-                weddingsCompleted: Number(data.weddingsCompleted),
-                description: data.description,
-                bioFull: data.bioFull,
-                phone: data.phone,
-                whatsapp: data.whatsapp,
-                instagram: data.instagram,
-                website: data.website,
-                email: data.email,
-                address: data.address,
+                name: data.name || currentProfile.name,
+                studioName: data.studioName || currentProfile.studioName,
+                avatar: data.avatar || currentProfile.avatar,
+                coverImage: data.coverImage || currentProfile.coverImage,
+                city: data.city || currentProfile.city,
+                state: data.state || currentProfile.state,
+                neighborhood: data.neighborhood ?? currentProfile.neighborhood,
+                priceStartingFrom: integerOrFallback(data.priceStartingFrom, currentProfile.priceStartingFrom || 0),
+                priceCategory: data.priceCategory || currentProfile.priceCategory,
+                styles: Array.isArray(data.styles) ? data.styles : currentProfile.styles,
+                deliverables: Array.isArray(data.deliverables) ? data.deliverables : currentProfile.deliverables,
+                categories: Array.isArray(data.categories) ? data.categories : currentProfile.categories,
+                yearsExperience: integerOrFallback(data.yearsExperience, currentProfile.yearsExperience || 0),
+                weddingsCompleted: integerOrFallback(data.weddingsCompleted, currentProfile.weddingsCompleted || 0),
+                description: data.description ?? currentProfile.description,
+                bioFull: data.bioFull ?? currentProfile.bioFull,
+                phone: data.phone ?? currentProfile.phone,
+                whatsapp: data.whatsapp ?? currentProfile.whatsapp,
+                instagram: data.instagram ?? currentProfile.instagram,
+                website: data.website ?? currentProfile.website,
+                email: data.email || currentProfile.email,
+                address: data.address ?? currentProfile.address,
               })
               .where(eq(photographers.userUid, userUid));
             const fetched = await db
@@ -438,7 +482,7 @@ async function startServer() {
         });
       } catch (err: any) {
         console.error('Error saving photographer profile:', err);
-        res.status(500).json({ success: false, error: err?.message || 'Erro ao salvar perfil' });
+        res.status(500).json({ success: false, error: 'Não foi possível salvar o perfil. Revise os campos obrigatórios e tente novamente.' });
       }
     }
   );
