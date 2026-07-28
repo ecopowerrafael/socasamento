@@ -37,7 +37,8 @@ export const Header: React.FC<HeaderProps> = ({
   };
 
   return (
-    <header className="sticky top-0 z-50 bg-[#F6EEE8]/95 backdrop-blur-md border-b border-[#C88E9B]/20 shadow-xs">
+    <>
+      <header className="sticky top-0 z-50 bg-[#F6EEE8]/95 backdrop-blur-md border-b border-[#C88E9B]/20 shadow-xs">
       {/* Top Banner Notice */}
       <div className="bg-[#5A4035] text-[#F6EEE8] text-[10px] sm:text-xs py-1.5 px-3 text-center font-medium flex items-center justify-center gap-2 min-h-7">
         <span className="inline-block w-2 h-2 rounded-full bg-[#C7A86A] animate-pulse"></span>
@@ -177,6 +178,7 @@ export const Header: React.FC<HeaderProps> = ({
 
         </div>
       </div>
+      </header>
 
       {/* Mobile Drawer Menu */}
       {mobileMenuOpen && (
@@ -374,6 +376,6 @@ export const Header: React.FC<HeaderProps> = ({
           );
         })}
       </nav>
-    </header>
+    </>
   );
 };
