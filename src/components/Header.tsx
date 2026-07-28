@@ -185,9 +185,9 @@ export const Header: React.FC<HeaderProps> = ({
           type="button"
           aria-label="Fechar menu"
           onClick={() => setMobileMenuOpen(false)}
-          className="fixed inset-0 top-[92px] z-40 bg-[#2d1d17]/35 backdrop-blur-[2px] lg:hidden"
+          className="fixed inset-x-0 bottom-[76px] top-0 z-40 bg-[#2d1d17]/35 backdrop-blur-[2px] lg:hidden"
         />
-        <div className="absolute left-0 right-0 top-full z-50 lg:hidden max-h-[calc(100dvh-92px)] overflow-y-auto rounded-b-3xl bg-[#FAF7F5] border-b border-[#C88E9B]/30 px-4 pt-4 pb-7 shadow-2xl space-y-5">
+        <div className="fixed inset-x-0 bottom-[76px] z-50 max-h-[calc(100dvh-92px)] overflow-y-auto rounded-t-3xl border-t border-[#C88E9B]/30 bg-[#FAF7F5] px-4 pb-7 pt-4 shadow-[0_-18px_50px_rgba(45,29,23,0.25)] space-y-5 lg:hidden">
           <div className="flex items-center justify-between">
             <div>
               <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-[#C88E9B]">Navegação</span>
