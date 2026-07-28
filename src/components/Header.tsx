@@ -332,25 +332,46 @@ export const Header: React.FC<HeaderProps> = ({
       )}
 
       {/* Mobile app-style bottom navigation */}
-      <nav className="fixed inset-x-0 bottom-0 z-50 grid h-[72px] grid-cols-5 border-t border-[#5A4035]/10 bg-white/95 px-1 pb-[max(6px,env(safe-area-inset-bottom))] pt-1.5 shadow-[0_-8px_24px_rgba(90,64,53,0.12)] backdrop-blur-xl md:hidden">
+      <nav className="fixed inset-x-0 bottom-0 z-50 grid h-[76px] grid-cols-6 border-t border-[#5A4035]/10 bg-white/95 px-1 pb-[max(6px,env(safe-area-inset-bottom))] pt-1.5 shadow-[0_-8px_24px_rgba(90,64,53,0.12)] backdrop-blur-xl md:hidden">
         {[
           { id: 'home', label: 'Início', icon: Home },
-          ...navItems,
+          navItems[0],
+          navItems[1],
+          { id: 'multi-quote', label: 'Cotação', mobileLabel: 'Cotação', icon: Sparkles },
+          navItems[2],
+          navItems[3],
         ].map((item) => {
           const Icon = item.icon;
           const isActive = currentView === item.id || (item.id === 'directory' && currentView.startsWith('city-'));
+          const isQuoteAction = item.id === 'multi-quote';
           return (
             <button
               key={item.id}
-              onClick={() => goTo(item.id)}
+              onClick={() => {
+                if (isQuoteAction) {
+                  setMobileMenuOpen(false);
+                  openMultiQuote();
+                  return;
+                }
+                goTo(item.id);
+              }}
+              aria-label={isQuoteAction ? 'Abrir Cotação Múltipla' : item.label}
               className={`relative min-w-0 rounded-xl px-1 py-1 text-center transition-colors ${
-                isActive ? 'text-[#C88E9B]' : 'text-[#5A4035]/65'
+                isQuoteAction
+                  ? 'text-[#C88E9B]'
+                  : isActive
+                  ? 'text-[#C88E9B]'
+                  : 'text-[#5A4035]/65'
               }`}
             >
-              <span className={`mx-auto mb-0.5 grid h-7 w-9 place-items-center rounded-xl ${isActive ? 'bg-[#FAE8EC]' : ''}`}>
-                <Icon className={`h-[18px] w-[18px] ${isActive ? 'stroke-[2.5]' : ''}`} />
+              <span className={`mx-auto mb-0.5 grid place-items-center ${
+                isQuoteAction
+                  ? '-mt-3 h-10 w-10 rounded-2xl bg-[#C88E9B] text-white shadow-lg shadow-[#C88E9B]/30'
+                  : `h-7 w-9 rounded-xl ${isActive ? 'bg-[#FAE8EC]' : ''}`
+              }`}>
+                <Icon className={`h-[18px] w-[18px] ${isActive || isQuoteAction ? 'stroke-[2.5]' : ''}`} />
               </span>
-              <span className="block whitespace-nowrap text-[9px] font-bold leading-tight">
+              <span className={`block whitespace-nowrap font-bold leading-tight ${isQuoteAction ? 'text-[8px]' : 'text-[9px]'}`}>
                 {'mobileLabel' in item ? item.mobileLabel : item.label}
               </span>
               {'count' in item && Number(item.count || 0) > 0 && (
