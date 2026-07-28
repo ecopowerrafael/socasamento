@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import crypto from 'node:crypto';
 import type { PoolConnection, RowDataPacket } from 'mysql2/promise';
 import { getMysqlPool } from './index.ts';
 
@@ -9,6 +10,8 @@ export interface SchemaAudit {
   createdTables: string[];
   addedColumns: string[];
   addedConstraints: string[];
+  skipped?: boolean;
+  fingerprint?: string;
 }
 
 function findMigrationDirectory() {
@@ -30,6 +33,63 @@ function migrationStatements() {
     .split('--> statement-breakpoint')
     .map((statement) => statement.trim())
     .filter(Boolean));
+}
+
+function migrationFingerprint() {
+  const directory = findMigrationDirectory();
+  const hash = crypto.createHash('sha256');
+  for (const file of fs.readdirSync(directory).filter((name) => /^\d+.*\.sql$/i.test(name)).sort()) {
+    hash.update(file);
+    hash.update('\0');
+    hash.update(fs.readFileSync(path.join(directory, file)));
+    hash.update('\0');
+  }
+  return hash.digest('hex');
+}
+
+/**
+ * Uses a fingerprint stored in MySQL to avoid rescanning every table on
+ * frontend-only deploys. A full non-destructive audit runs only when the SQL
+ * migration files change or when the database is new.
+ */
+export async function ensureMysqlSchemaCurrent(): Promise<SchemaAudit> {
+  const fingerprint = migrationFingerprint();
+  const pool = getMysqlPool();
+  const connection = await pool.getConnection();
+  try {
+    const [tableRows] = await connection.query<RowDataPacket[]>(
+      `SELECT 1 FROM information_schema.TABLES
+       WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'settings' LIMIT 1`,
+    );
+    if (tableRows.length) {
+      const [versionRows] = await connection.query<RowDataPacket[]>(
+        `SELECT setting_value FROM settings
+         WHERE setting_key = 'system_schema_fingerprint' LIMIT 1`,
+      );
+      if (String(versionRows[0]?.setting_value || '') === fingerprint) {
+        return {
+          expectedTables: 0,
+          existingTables: 0,
+          createdTables: [],
+          addedColumns: [],
+          addedConstraints: [],
+          skipped: true,
+          fingerprint,
+        };
+      }
+    }
+  } finally {
+    connection.release();
+  }
+
+  const audit = await ensureCompleteMysqlSchema();
+  await pool.query(
+    `INSERT INTO settings (setting_key, setting_value)
+     VALUES ('system_schema_fingerprint', ?)
+     ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)`,
+    [fingerprint],
+  );
+  return { ...audit, skipped: false, fingerprint };
 }
 
 function createTableName(statement: string) {

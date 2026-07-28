@@ -43,7 +43,7 @@ import {
   AuthRequest,
 } from './src/middleware/auth.ts';
 import bcrypt from 'bcryptjs';
-import { auditMysqlSchema, ensureCompleteMysqlSchema } from './src/db/schemaBootstrap.ts';
+import { auditMysqlSchema, ensureMysqlSchemaCurrent } from './src/db/schemaBootstrap.ts';
 import authRoutes from './src/routes/authRoutes.ts';
 import brideRoutes from './src/routes/brideRoutes.ts';
 import publicRoutes from './src/routes/publicRoutes.ts';
@@ -2968,7 +2968,7 @@ async function startServer() {
   // ==========================================
   app.post('/api/admin/import-ibge-locations', requireAuth, requireAdmin, async (req, res) => {
     try {
-      await seedDatabase();
+      await seedDatabase(true);
       const stateCount = (await db.select().from(states)).length;
       const cityCount = (await db.select().from(cities)).length;
       res.json({ success: true, report: { states: stateCount, cities: cityCount }, message: 'Localidades iniciais sincronizadas no MySQL.' });
@@ -3287,8 +3287,12 @@ Formate a resposta em tópicos claros com markdown.`;
   if (!connStatus.success) {
     throw new Error('O MySQL é obrigatório. Corrija DB_HOST, DB_DATABASE, DB_USERNAME e DB_PASSWORD antes de iniciar.');
   }
-  const schemaAudit = await ensureCompleteMysqlSchema();
-  console.log(`Schema MySQL pronto: ${schemaAudit.existingTables}/${schemaAudit.expectedTables} tabelas.`);
+  const schemaAudit = await ensureMysqlSchemaCurrent();
+  if (schemaAudit.skipped) {
+    console.log('Schema MySQL já está na versão atual; auditoria completa dispensada.');
+  } else {
+    console.log(`Schema MySQL pronto: ${schemaAudit.existingTables}/${schemaAudit.expectedTables} tabelas.`);
+  }
   await seedDatabase();
   databaseReady = true;
 

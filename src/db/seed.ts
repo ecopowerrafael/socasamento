@@ -32,6 +32,7 @@ import {
   achievements,
   userAchievements,
   weddingWebsites,
+  settings,
 } from './schema.ts';
 import { BRAZIL_STATES, MOCK_PHOTOGRAPHERS, RECENT_WEDDINGS, BLOG_ARTICLES, INITIAL_CHECKLIST } from '../data/mockData.ts';
 import {
@@ -47,10 +48,24 @@ import {
 import bcrypt from 'bcryptjs';
 import { eq } from 'drizzle-orm';
 
-export async function seedDatabase() {
+const CORE_SEED_VERSION = '2026-07-28-core-v1';
+
+export async function seedDatabase(force = false) {
   console.log('Starting MySQL Database Seed...');
 
   try {
+    if (!force) {
+      const seedVersion = await db
+        .select({ value: settings.settingValue })
+        .from(settings)
+        .where(eq(settings.settingKey, 'system_seed_version'))
+        .limit(1);
+      if (seedVersion[0]?.value === CORE_SEED_VERSION) {
+        console.log(`Carga inicial já aplicada (${CORE_SEED_VERSION}); nenhuma gravação necessária.`);
+        return;
+      }
+    }
+
     const seedDemoData = process.env.SEED_DEMO_DATA === 'true';
     // 1. Seed Super Admin & Admin Users.
     // Store only one-way hashes in source control and also repair accounts
@@ -838,6 +853,23 @@ export async function seedDatabase() {
       }
 
       console.log('✓ Commercial Subscription Plans seeded');
+    }
+
+    const existingSeedVersion = await db
+      .select({ id: settings.id })
+      .from(settings)
+      .where(eq(settings.settingKey, 'system_seed_version'))
+      .limit(1);
+    if (existingSeedVersion.length) {
+      await db
+        .update(settings)
+        .set({ settingValue: CORE_SEED_VERSION })
+        .where(eq(settings.id, existingSeedVersion[0].id));
+    } else {
+      await db.insert(settings).values({
+        settingKey: 'system_seed_version',
+        settingValue: CORE_SEED_VERSION,
+      });
     }
 
     console.log('✓ Checklists & Demo Leads seeded');

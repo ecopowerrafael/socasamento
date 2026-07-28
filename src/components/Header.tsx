@@ -175,29 +175,6 @@ export const Header: React.FC<HeaderProps> = ({
             )}
           </div>
 
-          {/* Mobile Menu Button */}
-          <div className="flex items-center gap-2 lg:hidden">
-            <button
-              onClick={openMultiQuote}
-              className="h-10 px-3 bg-[#C88E9B] text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-sm active:scale-95"
-            >
-              <Sparkles className="w-4 h-4" />
-              <span>Cotar</span>
-            </button>
-            <button
-              onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-              className={`h-10 w-10 grid place-items-center rounded-xl border shadow-sm transition-colors ${
-                mobileMenuOpen
-                  ? 'bg-[#5A4035] border-[#5A4035] text-white'
-                  : 'bg-white border-[#5A4035]/15 text-[#5A4035]'
-              }`}
-              aria-label={mobileMenuOpen ? 'Fechar menu' : 'Abrir menu'}
-              aria-expanded={mobileMenuOpen}
-            >
-              {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
-            </button>
-          </div>
-
         </div>
       </div>
 
@@ -216,7 +193,13 @@ export const Header: React.FC<HeaderProps> = ({
               <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-[#C88E9B]">Navegação</span>
               <h2 className="font-serif text-xl font-bold text-[#5A4035]">Menu principal</h2>
             </div>
-            <span className="rounded-full bg-[#F1E6E2] px-3 py-1 text-[10px] font-bold text-[#5A4035]">Guia Fotógrafo</span>
+            <button
+              onClick={() => setMobileMenuOpen(false)}
+              aria-label="Fechar menu"
+              className="grid h-10 w-10 place-items-center rounded-xl bg-[#F1E6E2] text-[#5A4035]"
+            >
+              <X className="h-5 w-5" />
+            </button>
           </div>
 
           <div className="space-y-2">
@@ -332,18 +315,18 @@ export const Header: React.FC<HeaderProps> = ({
       )}
 
       {/* Mobile app-style bottom navigation */}
-      <nav className="fixed inset-x-0 bottom-0 z-50 grid h-[76px] grid-cols-6 border-t border-[#5A4035]/10 bg-white/95 px-1 pb-[max(6px,env(safe-area-inset-bottom))] pt-1.5 shadow-[0_-8px_24px_rgba(90,64,53,0.12)] backdrop-blur-xl md:hidden">
+      <nav className="fixed inset-x-0 bottom-0 z-50 grid h-[76px] grid-cols-5 border-t border-[#5A4035]/10 bg-white/95 px-1 pb-[max(6px,env(safe-area-inset-bottom))] pt-1.5 shadow-[0_-8px_24px_rgba(90,64,53,0.12)] backdrop-blur-xl lg:hidden">
         {[
           { id: 'home', label: 'Início', icon: Home },
           navItems[0],
-          navItems[1],
           { id: 'multi-quote', label: 'Cotação', mobileLabel: 'Cotação', icon: Sparkles },
-          navItems[2],
           navItems[3],
+          { id: 'more', label: 'Mais', mobileLabel: 'Mais', icon: Menu },
         ].map((item) => {
           const Icon = item.icon;
           const isActive = currentView === item.id || (item.id === 'directory' && currentView.startsWith('city-'));
           const isQuoteAction = item.id === 'multi-quote';
+          const isMoreAction = item.id === 'more';
           return (
             <button
               key={item.id}
@@ -353,13 +336,18 @@ export const Header: React.FC<HeaderProps> = ({
                   openMultiQuote();
                   return;
                 }
+                if (isMoreAction) {
+                  setMobileMenuOpen((open) => !open);
+                  return;
+                }
                 goTo(item.id);
               }}
-              aria-label={isQuoteAction ? 'Abrir Cotação Múltipla' : item.label}
+              aria-label={isQuoteAction ? 'Abrir Cotação Múltipla' : isMoreAction ? (mobileMenuOpen ? 'Fechar menu' : 'Abrir menu') : item.label}
+              aria-expanded={isMoreAction ? mobileMenuOpen : undefined}
               className={`relative min-w-0 rounded-xl px-1 py-1 text-center transition-colors ${
                 isQuoteAction
                   ? 'text-[#C88E9B]'
-                  : isActive
+                  : isActive || (isMoreAction && mobileMenuOpen)
                   ? 'text-[#C88E9B]'
                   : 'text-[#5A4035]/65'
               }`}
@@ -369,7 +357,10 @@ export const Header: React.FC<HeaderProps> = ({
                   ? '-mt-3 h-10 w-10 rounded-2xl bg-[#C88E9B] text-white shadow-lg shadow-[#C88E9B]/30'
                   : `h-7 w-9 rounded-xl ${isActive ? 'bg-[#FAE8EC]' : ''}`
               }`}>
-                <Icon className={`h-[18px] w-[18px] ${isActive || isQuoteAction ? 'stroke-[2.5]' : ''}`} />
+                {isMoreAction && mobileMenuOpen
+                  ? <X className="h-[18px] w-[18px] stroke-[2.5]" />
+                  : <Icon className={`h-[18px] w-[18px] ${isActive || isQuoteAction ? 'stroke-[2.5]' : ''}`} />
+                }
               </span>
               <span className={`block whitespace-nowrap font-bold leading-tight ${isQuoteAction ? 'text-[8px]' : 'text-[9px]'}`}>
                 {'mobileLabel' in item ? item.mobileLabel : item.label}
